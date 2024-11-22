@@ -1,7 +1,8 @@
 use bevy::prelude::*;
+use bevy::sprite::{MaterialMesh2dBundle, Mesh2dHandle};
 use bevy::window::PrimaryWindow;
 
-const NUM_PARTICLES: u32 = 2000;
+const NUM_PARTICLES: u32 = 5000;
 const GRAVITY: f32 = 9.8;
 const PARTICLE_MASS: f32 = 1.0;
 
@@ -15,48 +16,53 @@ fn main() {
         .run();
 }
 
+#[derive(Component)]
+struct MyCameraMarker;
+
 fn setup(
     mut commands: Commands,
     window_query: Query<&Window, With<PrimaryWindow>>,
-    asset_server: Res<AssetServer>
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    commands.spawn(Camera2dBundle::default());
     let window = window_query.get_single().unwrap();
-    let max_h = window.height() * 0.67;
-
-    let (size, cols, _rows) = subdivide_into_squares(
+    let fluid_h = window.height() * 0.67;
+    let (grid_size, cols, rows) = subdivide_into_squares(
         window.width(),
-        max_h,
+        fluid_h,
         NUM_PARTICLES
     );
+    let particle_size = grid_size * 0.8;
+    let color = Color::linear_rgb(0.0, 0.3, 1.0);
 
-    let particle_size = size * 0.8;
-    let scale = Vec3::splat(particle_size / 128.0);
-    let shift = Vec3 {
-        x: -window.width() / 2.0 + size / 2.0,
-        y: -(window.height() - max_h) / 2.0 + size / 2.0,
-        z: 0.0
-    };
+    commands.spawn((
+        Camera2dBundle {
+            transform: Transform::from_xyz(
+                window.width() / 2.0,
+                window.height() / 2.0,
+                0.0),
+            ..default()
+        },
+        MyCameraMarker,
+    ));
     
-    // Make it even
-    let num_particles = NUM_PARTICLES - (NUM_PARTICLES % cols);
-
-    let texture = asset_server.load("grey.png");
-    for i in 0..num_particles {
-        let x = (i % cols) as f32 * size;
-        let y = (i / cols) as f32 * size;
-        commands.spawn((
-            SpriteBundle {
-                texture: texture.clone(),
+    info!("Spawning particles");
+    for r in 0..rows {
+        for c in 0..cols {
+            let x = (c as f32 + 0.5) * grid_size;
+            let y = window.height() - (r as f32 + 0.5) * grid_size;
+            commands.spawn(MaterialMesh2dBundle {
+                mesh: Mesh2dHandle(meshes.add(Circle { radius: particle_size / 2.0 })),
+                material: materials.add(color),
                 transform: Transform {
-                    translation: Vec3 { x, y, z: 0.0 } + shift,
-                    scale,
+                    translation: Vec3 { x, y, z: 0.0 },
                     ..default()
                 },
                 ..default()
-            },
-        ));
+            });
+        }
     }
+    info!("Done spawning particles");
 }
 
 fn update() {}
@@ -69,8 +75,8 @@ fn subdivide_into_squares(w: f32, h: f32, n: u32) -> (f32, u32, u32) {
     let side_length = target_area.sqrt();
 
     // Step 3: Calculate the number of columns and rows
-    let columns = (w / side_length).ceil() as u32;
-    let rows = (n as f32 / columns as f32).ceil() as u32;
+    let columns = (w / side_length) as u32;
+    let rows = (n as f32 / columns as f32) as u32;
 
     // Step 4: Adjust the final side length to fit evenly
     let final_side_length = f32::min(w / columns as f32, h / rows as f32);
