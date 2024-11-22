@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-const NUM_PARTICLES: u32 = 280;
+const NUM_PARTICLES: u32 = 2000;
 const GRAVITY: f32 = 9.8;
 const PARTICLE_MASS: f32 = 1.0;
 
@@ -37,9 +37,12 @@ fn setup(
         y: -(window.height() - max_h) / 2.0 + size / 2.0,
         z: 0.0
     };
+    
+    // Make it even
+    let num_particles = NUM_PARTICLES - (NUM_PARTICLES % cols);
 
     let texture = asset_server.load("grey.png");
-    for i in 0..NUM_PARTICLES {
+    for i in 0..num_particles {
         let x = (i % cols) as f32 * size;
         let y = (i / cols) as f32 * size;
         commands.spawn((
