@@ -1,1 +1,7 @@
-/target
+.idea/
+.vscode/
+stages/
+releases/
+target/
+
+Cargo.lock
