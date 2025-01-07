@@ -3,5 +3,21 @@ name = "sph"
 version = "0.1.0"
 edition = "2021"
 
+# Enable a large amount of optimization in the dev profile for dependencies.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+# Enable link-time optimization
+lto = true
+# 3 == all optimization
+opt-level = 3
+# Strip all symbols
+strip = "symbols"
+
 [dependencies]
-bevy = { version = "0.14.1" }
+# In order to use dynamic_linking, you need to set the environment variable
+# DYLD_FALLBACK_LIBRARY_PATH=$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/lib
+# Where the path comes from `rustc --print=sysroot` (with /lib appended).
+bevy = { version = "0.15", features = ["dynamic_linking"] }
+log = { version = "*", features = ["max_level_debug", "release_max_level_warn"] }
