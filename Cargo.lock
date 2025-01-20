@@ -3639,6 +3639,8 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "log",
+ "once_cell",
+ "rand",
 ]
 
 [[package]]
