@@ -16,10 +16,8 @@ opt-level = 3
 strip = "symbols"
 
 [dependencies]
-# In order to use dynamic_linking, you need to set the environment variable
+# In order to use dynamic_linking, you need to set the environment variable on Mac:
 # DYLD_FALLBACK_LIBRARY_PATH=$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/lib
 # Where the path comes from `rustc --print=sysroot` (with /lib appended).
-bevy = { version = "0.15", features = ["dynamic_linking"] }
-log = { version = "*", features = ["max_level_debug", "release_max_level_warn"] }
-once_cell = "1"
+bevy = { version = "0.15", features = ["dynamic_linking", "multi_threaded"] }
 rand = "0"
