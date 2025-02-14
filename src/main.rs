@@ -13,32 +13,9 @@ use bevy::window::PrimaryWindow;
 
 const NUM_PARTICLES: u32 = 1000;
 
-const DIGIT_KEYS: [KeyCode; 20] = [
-    KeyCode::Digit1,
-    KeyCode::Digit2,
-    KeyCode::Digit3,
-    KeyCode::Digit4,
-    KeyCode::Digit5,
-    KeyCode::Digit6,
-    KeyCode::Digit7,
-    KeyCode::Digit8,
-    KeyCode::Digit9,
-    KeyCode::Digit0,
-    KeyCode::Numpad1,
-    KeyCode::Numpad2,
-    KeyCode::Numpad3,
-    KeyCode::Numpad4,
-    KeyCode::Numpad5,
-    KeyCode::Numpad6,
-    KeyCode::Numpad7,
-    KeyCode::Numpad8,
-    KeyCode::Numpad9,
-    KeyCode::Numpad0,
-];
-
-static FRAMES_TO_SHOW: AtomicU32 = AtomicU32::new(0);
+static FRAMES_TO_SHOW: AtomicU32 = AtomicU32::new(1);
 static LOG_STUFF: AtomicBool = AtomicBool::new(true);
-static SHOW_ARROWS: AtomicBool = AtomicBool::new(true);
+static SHOW_ARROWS: AtomicBool = AtomicBool::new(false);
 
 fn main() {
     App::new()
@@ -67,12 +44,11 @@ fn setup(
     // grid_size * scale = 0.08333
     // scale = 0.08333 / grid_size
     let scale = 0.08333 / grid_size;
-    println!("scale: {scale}");
     let grid_size = grid_size * scale;
 
-    let particle_size = (grid_size * 0.5);
+    let particle_size = grid_size * 0.5;
 
-    commands.spawn(Simulation::new(window.width() * scale, window.height() * scale, particle_size));
+    commands.spawn(Simulation::new(window.width() * scale, window.height() * scale, particle_size, scale));
 
     let color = Color::linear_rgb(0.0, 0.3, 1.0);
 
@@ -174,6 +150,29 @@ fn velocity_arrows(mut gizmos: Gizmos, mut particle_query: Query<(&Transform, &m
         });
     }
 }
+
+const DIGIT_KEYS: [KeyCode; 20] = [
+    KeyCode::Digit1,
+    KeyCode::Digit2,
+    KeyCode::Digit3,
+    KeyCode::Digit4,
+    KeyCode::Digit5,
+    KeyCode::Digit6,
+    KeyCode::Digit7,
+    KeyCode::Digit8,
+    KeyCode::Digit9,
+    KeyCode::Digit0,
+    KeyCode::Numpad1,
+    KeyCode::Numpad2,
+    KeyCode::Numpad3,
+    KeyCode::Numpad4,
+    KeyCode::Numpad5,
+    KeyCode::Numpad6,
+    KeyCode::Numpad7,
+    KeyCode::Numpad8,
+    KeyCode::Numpad9,
+    KeyCode::Numpad0,
+];
 
 fn detect_keypress(kb: Res<ButtonInput<KeyCode>>, mut app_exit: EventWriter<AppExit>) {
     if kb.just_pressed(KeyCode::Space) {
