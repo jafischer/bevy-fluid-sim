@@ -72,6 +72,7 @@ fn setup(
                     radius: particle_size / 2.0,
                 })),
                 MeshMaterial2d(materials.add(color)),
+                Transform::from_translation(Vec3 { x, y, z: 0.0 }),
                 Particle {
                     id: (r * cols + c) as usize,
                     position: Vec2 { x, y },
