@@ -5,16 +5,16 @@ use bevy::prelude::{Component, Mut};
 
 use crate::Particle;
 
-const GRAVITY: f32 = -10.0;
+const GRAVITY: f32 = -1.0;
 const PARTICLE_MASS: f32 = 1.0;
-const PRESSURE_MULTIPLIER: f32 = 200.0;
+const PRESSURE_MULTIPLIER: f32 = 900.0;
 const COLLISION_DAMPING: f32 = 0.5;
 
 #[derive(Component, Clone, Debug)]
 pub struct Simulation {
     pub smoothing_radius: f32,
-    pub smoothing_derivative_scaling_factor: f32,
     pub smoothing_scaling_factor: f32,
+    pub smoothing_derivative_scaling_factor: f32,
     pub target_density: f32,
     pub half_bounds_size: Vec2,
     pub gravity: Vec2,
@@ -25,12 +25,17 @@ impl Simulation {
         let smoothing_radius = 0.2;
         let simulation = Simulation {
             smoothing_radius,
-            smoothing_derivative_scaling_factor: PI * smoothing_radius.powf(4.0) / 6.0,
+            // SpikyPow2ScalingFactor: 6 / (Mathf.PI * Mathf.Pow(smoothingRadius, 4))
             smoothing_scaling_factor: 6.0 / (PI * smoothing_radius.powf(4.0)),
-            target_density: 250.0,
+            // SpikyPow2DerivativeScalingFactor: 12 / (Mathf.Pow(smoothingRadius, 4) * Mathf.PI)
+            // smoothing_derivative_scaling_factor: 12.0 / (PI * smoothing_radius.powf(4.0)),
+            smoothing_derivative_scaling_factor: PI * smoothing_radius.powf(4.0) / 6.0,
+            target_density: 100.0,
             half_bounds_size: Vec2::new(box_width, box_height) / 2.0 - particle_size / 2.0,
             gravity: Vec2::new(0.0, GRAVITY * scale),
         };
+
+        println!("His smoothing_derivative_scaling_factor: {}", 12.0 / (PI * smoothing_radius.powf(4.0)));
 
         println!("{simulation:?}");
 
@@ -55,6 +60,8 @@ impl Simulation {
         if distance >= self.smoothing_radius {
             0f32
         } else {
+            // float v = radius - dst;
+            // return v * v * SpikyPow2ScalingFactor;
             (self.smoothing_radius - distance) * (self.smoothing_radius - distance) * self.smoothing_scaling_factor
         }
     }
@@ -63,13 +70,16 @@ impl Simulation {
         if distance >= self.smoothing_radius {
             0f32
         } else {
+            // float v = radius - dst;
+            // return -v * SpikyPow2DerivativeScalingFactor;
             (distance - self.smoothing_radius) * self.smoothing_derivative_scaling_factor
         }
     }
 
     pub fn apply_pressure(&self, particle: &mut Mut<Particle>, particles: &Vec<Particle>, delta: f32) {
         let pressure_force = self.pressure_force(&particle, &particles);
-        particle.velocity += (self.gravity + pressure_force) * delta;
+        // particle.velocity += (self.gravity + pressure_force) * delta;
+        particle.velocity = pressure_force * delta;
         particle.position = particle.position + particle.velocity;
         self.resolve_collisions(particle);
     }
@@ -106,6 +116,7 @@ impl Simulation {
             let direction = offset / distance;
             let slope = self.smoothing_kernel_derivative(distance);
             let pressure = self.pressure(particle.density);
+            // pressureForce += dirToNeighbour * DensityDerivative(dst, smoothingRadius) * sharedPressure / neighbourDensity;
             gradient += direction * slope * pressure / particle.density;
         }
         gradient // / pt.density

@@ -10,10 +10,11 @@ use crate::sim::Simulation;
 use bevy::color::palettes::basic::YELLOW;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
+use rand::random;
 
-const NUM_PARTICLES: u32 = 1000;
+const NUM_PARTICLES: u32 = 500;
 
-static FRAMES_TO_SHOW: AtomicU32 = AtomicU32::new(1);
+static FRAMES_TO_SHOW: AtomicU32 = AtomicU32::new(0);
 static LOG_STUFF: AtomicBool = AtomicBool::new(true);
 static SHOW_ARROWS: AtomicBool = AtomicBool::new(false);
 
@@ -44,7 +45,7 @@ fn setup(
     // grid_size * scale = 0.08333
     // scale = 0.08333 / grid_size
     let scale = 0.08333 / grid_size;
-    let grid_size = grid_size * scale;
+    let grid_size = grid_size * scale * 0.9;
 
     let particle_size = grid_size * 0.5;
 
@@ -56,15 +57,15 @@ fn setup(
         Camera2d,
         Transform::from_scale(Vec3::splat(scale)),
     ));
-    let scaled_width = window.width() * scale;
-    let scaled_height = window.height() * scale;
+    let scaled_width = grid_size * cols as f32;
+    let scaled_height = grid_size * rows as f32;
 
     let x_start = -scaled_width / 2.0;
     let y_start = -scaled_height / 2.0;
     for r in 0..rows {
         for c in 0..cols {
-            let x = x_start + (c as f32 + 0.5) * grid_size;
-            let y = y_start + scaled_height - (r as f32 + 0.5) * grid_size;
+            let x = x_start + random::<f32>() * scaled_width;
+            let y = y_start + random::<f32>() * scaled_height;
             // let velocity = Vec2::new(random::<f32>() * 1.0 - 0.5, random::<f32>() * 1.0 - 0.5) * particle_size / 2.0;
             let velocity = Vec2::ZERO;
             commands.spawn((
