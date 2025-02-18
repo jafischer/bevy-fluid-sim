@@ -35,8 +35,6 @@ impl Simulation {
             gravity: Vec2::new(0.0, GRAVITY * scale),
         };
 
-        println!("His smoothing_derivative_scaling_factor: {}", 12.0 / (PI * smoothing_radius.powf(4.0)));
-
         println!("{simulation:?}");
 
         simulation
@@ -84,9 +82,10 @@ impl Simulation {
         self.resolve_collisions(particle);
     }
 
-    pub fn pressure(&self, density: f32) -> f32 {
-        let density_error = density - self.target_density;
-        density_error * PRESSURE_MULTIPLIER
+    pub fn shared_pressure(&self, density1: f32, density2: f32) -> f32 {
+        let density_error1 = density1 - self.target_density;
+        let density_error2 = density2 - self.target_density;
+        (density_error1 + density_error2) * PRESSURE_MULTIPLIER / 2.0
     }
 
     pub fn resolve_collisions(&self, particle: &mut Mut<Particle>) {
@@ -115,7 +114,7 @@ impl Simulation {
             // Unit vector in the direction of the particle.
             let direction = offset / distance;
             let slope = self.smoothing_kernel_derivative(distance);
-            let pressure = self.pressure(particle.density);
+            let pressure = self.shared_pressure(pt.density, particle.density);
             // pressureForce += dirToNeighbour * DensityDerivative(dst, smoothingRadius) * sharedPressure / neighbourDensity;
             gradient += direction * slope * pressure / particle.density;
         }
