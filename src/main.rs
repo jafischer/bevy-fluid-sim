@@ -1,28 +1,23 @@
 mod particle;
 mod sim;
 
-use std::sync::atomic::Ordering::SeqCst;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
 use std::time::Instant;
 
-use crate::particle::Particle;
-use crate::sim::Simulation;
 use bevy::color::palettes::basic::YELLOW;
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use rand::random;
 
-const NUM_PARTICLES: u32 = 500;
+use crate::particle::Particle;
+use crate::sim::Simulation;
 
-static FRAMES_TO_SHOW: AtomicU32 = AtomicU32::new(0);
-static LOG_STUFF: AtomicBool = AtomicBool::new(true);
-static SHOW_ARROWS: AtomicBool = AtomicBool::new(false);
+const NUM_PARTICLES: u32 = 500;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_systems(Startup, setup)
-        .add_systems(Update, (move_particles, velocity_arrows, detect_keypress))
+        .add_systems(Update, (move_particles, velocity_arrows, handle_keypress))
         .run();
 }
 
@@ -44,7 +39,9 @@ fn setup(
     // So we want the grid size to be scaled down to 0.08333 (1/12).
     // grid_size * scale = 0.08333
     // scale = 0.08333 / grid_size
-    let scale = 0.08333 / grid_size;
+    let scale = 0.08333 / grid_size
+        // * 0.67 // don't commit
+        ;
     let grid_size = grid_size * scale * 0.9;
 
     let particle_size = grid_size * 0.5;
@@ -53,10 +50,7 @@ fn setup(
 
     let color = Color::linear_rgb(0.0, 0.3, 1.0);
 
-    commands.spawn((
-        Camera2d,
-        Transform::from_scale(Vec3::splat(scale)),
-    ));
+    commands.spawn((Camera2d, Transform::from_scale(Vec3::splat(scale))));
     let scaled_width = grid_size * cols as f32;
     let scaled_height = grid_size * rows as f32;
 
@@ -88,13 +82,11 @@ fn setup(
 fn move_particles(
     mut particle_query: Query<(&mut Transform, &mut Particle)>,
     time: Res<Time>,
-    sim: Single<&Simulation>,
+    mut sim: Single<&mut Simulation>,
 ) {
-    if FRAMES_TO_SHOW.load(Relaxed) == 0 {
+    if sim.frames_to_show() == 0 {
         return;
     }
-
-    FRAMES_TO_SHOW.fetch_sub(1, SeqCst);
 
     // I'll hopefully figure this out later (can't have both a mutable and non-mutable ref to the
     // same collection), but for now just make a copy of the particles.
@@ -105,7 +97,7 @@ fn move_particles(
         particle.density = sim.density(&particle, &particle_positions);
     });
 
-    if LOG_STUFF.load(Relaxed) {
+    if sim.log_this_frame() {
         println!(
             "highest density:{}",
             particle_query
@@ -115,6 +107,8 @@ fn move_particles(
                 .1
                 .density
         );
+        let total_density = particle_query.iter().map(|(_, p)| p.density).sum::<f32>() / NUM_PARTICLES as f32;
+        println!("average density:{}", total_density);
     }
 
     let particles: Vec<Particle> = particle_query.iter().map(|(_, p)| p.clone()).collect();
@@ -125,7 +119,7 @@ fn move_particles(
         transform.translation.y = particle.position.y;
     });
 
-    if LOG_STUFF.load(Relaxed) {
+    if sim.log_this_frame() {
         // Dev build, 500 particles:
         //   par_iter_mut: avg 0.00226 sec
         //   iter_mut:     avg 0.00765 sec
@@ -139,11 +133,15 @@ fn move_particles(
         println!("elapsed: {}", Instant::now().duration_since(start_time).as_secs_f32());
     }
 
-    LOG_STUFF.store(false, Relaxed);
+    sim.end_frame();
 }
 
-fn velocity_arrows(mut gizmos: Gizmos, mut particle_query: Query<(&Transform, &mut Particle)>) {
-    if SHOW_ARROWS.load(Relaxed) {
+fn velocity_arrows(
+    mut gizmos: Gizmos,
+    mut particle_query: Query<(&Transform, &mut Particle)>,
+    sim: Single<&Simulation>,
+) {
+    if sim.show_arrows() {
         particle_query.iter_mut().for_each(|(transform, particle)| {
             let arrow_end = transform.translation.xy() + particle.velocity * 10.0;
             gizmos
@@ -176,12 +174,16 @@ const DIGIT_KEYS: [KeyCode; 20] = [
     KeyCode::Numpad0,
 ];
 
-fn detect_keypress(kb: Res<ButtonInput<KeyCode>>, mut app_exit: EventWriter<AppExit>) {
+fn handle_keypress(
+    kb: Res<ButtonInput<KeyCode>>,
+    mut app_exit: EventWriter<AppExit>,
+    mut sim: Single<&mut Simulation>,
+) {
     if kb.just_pressed(KeyCode::Space) {
-        if FRAMES_TO_SHOW.load(Relaxed) == 0 {
-            FRAMES_TO_SHOW.store(u32::MAX, Relaxed);
+        if sim.frames_to_show() == 0 {
+            sim.set_frames_to_show(u32::MAX);
         } else {
-            FRAMES_TO_SHOW.store(0, Relaxed);
+            sim.set_frames_to_show(0);
         }
     }
     if kb.any_just_pressed(DIGIT_KEYS) {
@@ -198,16 +200,16 @@ fn detect_keypress(kb: Res<ButtonInput<KeyCode>>, mut app_exit: EventWriter<AppE
                 KeyCode::Digit9 | KeyCode::Numpad9 => 9,
                 KeyCode::Digit0 | KeyCode::Numpad0 => 10,
                 _ => 0,
-            };
-            println!("{count}");
-            FRAMES_TO_SHOW.fetch_add(count, Relaxed);
+            } + sim.frames_to_show();
+
+            sim.set_frames_to_show(count);
         });
     }
     if kb.just_pressed(KeyCode::KeyL) {
-        LOG_STUFF.store(true, Relaxed);
+        sim.log_next_frame();
     }
     if kb.just_pressed(KeyCode::KeyA) {
-        SHOW_ARROWS.store(!SHOW_ARROWS.load(Relaxed), Relaxed);
+        sim.toggle_show_arrows();
     }
     if kb.just_pressed(KeyCode::Escape) {
         app_exit.send(AppExit::Success);

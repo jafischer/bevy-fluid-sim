@@ -1,23 +1,27 @@
-use std::f32::consts::PI;
-
 use bevy::math::Vec2;
 use bevy::prelude::{Component, Mut};
+use std::f32::consts::PI;
 
 use crate::Particle;
-
-const GRAVITY: f32 = -1.0;
-const PARTICLE_MASS: f32 = 1.0;
-const PRESSURE_MULTIPLIER: f32 = 900.0;
-const COLLISION_DAMPING: f32 = 0.5;
 
 #[derive(Component, Clone, Debug)]
 pub struct Simulation {
     pub smoothing_radius: f32,
     pub smoothing_scaling_factor: f32,
     pub smoothing_derivative_scaling_factor: f32,
-    pub target_density: f32,
     pub half_bounds_size: Vec2,
     pub gravity: Vec2,
+    pub target_density: f32,
+    pub pressure_multiplier: f32,
+    pub collision_damping: f32,
+    debug: DebugParams,
+}
+
+#[derive(Clone, Debug)]
+struct DebugParams {
+    frames_to_show: u32,
+    log_this_frame: bool,
+    show_arrows: bool,
 }
 
 impl Simulation {
@@ -30,14 +34,49 @@ impl Simulation {
             // SpikyPow2DerivativeScalingFactor: 12 / (Mathf.Pow(smoothingRadius, 4) * Mathf.PI)
             // smoothing_derivative_scaling_factor: 12.0 / (PI * smoothing_radius.powf(4.0)),
             smoothing_derivative_scaling_factor: PI * smoothing_radius.powf(4.0) / 6.0,
-            target_density: 100.0,
             half_bounds_size: Vec2::new(box_width, box_height) / 2.0 - particle_size / 2.0,
-            gravity: Vec2::new(0.0, GRAVITY * scale),
+            gravity: Vec2::new(0.0, -1.0 * scale),
+            target_density: 100.0,
+            pressure_multiplier: 500.0,
+            collision_damping: 0.5,
+            debug: DebugParams {
+                frames_to_show: 0,
+                log_this_frame: false,
+                show_arrows: false,
+            },
         };
 
         println!("{simulation:?}");
 
         simulation
+    }
+
+    pub fn frames_to_show(&self) -> u32 {
+        self.debug.frames_to_show
+    }
+
+    pub fn set_frames_to_show(&mut self, val: u32) {
+        self.debug.frames_to_show = val;
+    }
+
+    pub fn log_this_frame(&self) -> bool {
+        self.debug.log_this_frame
+    }
+
+    pub fn show_arrows(&self) -> bool {
+        self.debug.show_arrows
+    }
+
+    pub fn end_frame(&mut self) {
+        self.debug.log_this_frame = false;
+    }
+
+    pub fn toggle_show_arrows(&mut self) {
+        self.debug.show_arrows = !self.debug.show_arrows;
+    }
+
+    pub fn log_next_frame(&mut self) {
+        self.debug.log_this_frame = true;
     }
 
     pub fn density(&self, pt: &Particle, particle_positions: &Vec<Vec2>) -> f32 {
@@ -49,12 +88,12 @@ impl Simulation {
             }
             let distance = (particle_position - pt.position).length().max(0.000000001);
             let influence = self.smoothing_kernel(distance);
-            density += PARTICLE_MASS * influence;
+            density += influence;
         }
         density
     }
 
-    pub fn smoothing_kernel(&self, distance: f32) -> f32 {
+    fn smoothing_kernel(&self, distance: f32) -> f32 {
         if distance >= self.smoothing_radius {
             0f32
         } else {
@@ -64,7 +103,7 @@ impl Simulation {
         }
     }
 
-    pub fn smoothing_kernel_derivative(&self, distance: f32) -> f32 {
+    fn smoothing_kernel_derivative(&self, distance: f32) -> f32 {
         if distance >= self.smoothing_radius {
             0f32
         } else {
@@ -82,24 +121,24 @@ impl Simulation {
         self.resolve_collisions(particle);
     }
 
-    pub fn shared_pressure(&self, density1: f32, density2: f32) -> f32 {
+    fn shared_pressure(&self, density1: f32, density2: f32) -> f32 {
         let density_error1 = density1 - self.target_density;
         let density_error2 = density2 - self.target_density;
-        (density_error1 + density_error2) * PRESSURE_MULTIPLIER / 2.0
+        (density_error1 + density_error2) * self.pressure_multiplier / 2.0
     }
 
-    pub fn resolve_collisions(&self, particle: &mut Mut<Particle>) {
+    fn resolve_collisions(&self, particle: &mut Mut<Particle>) {
         if particle.position.x.abs() > self.half_bounds_size.x {
             particle.position.x = self.half_bounds_size.x * particle.position.x.signum();
-            particle.velocity.x *= -1.0 * COLLISION_DAMPING;
+            particle.velocity.x *= -1.0 * self.collision_damping;
         }
         if particle.position.y.abs() > self.half_bounds_size.y {
             particle.position.y = self.half_bounds_size.y * particle.position.y.signum();
-            particle.velocity.y *= -1.0 * COLLISION_DAMPING;
+            particle.velocity.y *= -1.0 * self.collision_damping;
         }
     }
 
-    pub fn pressure_force(&self, pt: &Particle, particles: &Vec<Particle>) -> Vec2 {
+    fn pressure_force(&self, pt: &Particle, particles: &Vec<Particle>) -> Vec2 {
         let mut gradient = Vec2::default();
 
         for particle in particles {
