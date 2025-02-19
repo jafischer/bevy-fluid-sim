@@ -51,7 +51,7 @@ fn update(
 
     if sim.frames_to_advance() > 0 {
         particle_query.par_iter_mut().for_each(|(mut transform, mut particle)| {
-            sim.apply_pressure(&mut particle);
+            sim.apply_velocity(&mut particle);
 
             transform.translation.x = particle.position.x;
             transform.translation.y = particle.position.y;
@@ -109,7 +109,10 @@ fn handle_keypress(
         });
     }
     if kb.just_pressed(KeyCode::KeyA) {
-        sim.toggle_show_arrows();
+        sim.toggle_arrows();
+    }
+    if kb.just_pressed(KeyCode::KeyG) {
+        sim.toggle_gravity();
     }
     if kb.just_pressed(KeyCode::KeyL) {
         sim.log_next_frame();

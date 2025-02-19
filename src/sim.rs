@@ -28,6 +28,7 @@ struct DebugParams {
     frames_to_show: u32,
     log_frame: u32,
     show_arrows: bool,
+    use_gravity: bool,
 }
 
 impl Simulation {
@@ -44,20 +45,20 @@ impl Simulation {
         // grid_size * scale = 0.08333
         // scale = 0.08333 / grid_size
         let scale = 0.08333 / grid_size;
-        let grid_size = grid_size * scale
-            * 0.67 // nocommit, just here to see how the fluid "edge" behaves, as opposed to the
-            // bounding box edge.
-            ;
-        let particle_size = grid_size * 0.5
-            * 0.0001 // nocommit
-            ;
+        let grid_size = grid_size * scale;
+        let particle_size = grid_size * 0.5;
         let smoothing_radius = 0.2;
         let simulation = Simulation {
             smoothing_radius,
-            // SpikyPow2ScalingFactor: 6 / (Mathf.PI * Mathf.Pow(smoothingRadius, 4))
+            // This is SpikyPow2ScalingFactor in Fluid-Sim.
             smoothing_scaling_factor: 6.0 / (PI * smoothing_radius.powf(4.0)),
-            // SpikyPow2DerivativeScalingFactor: 12 / (Mathf.Pow(smoothingRadius, 4) * Mathf.PI)
+            // Why doesn't this version (corresponding to SpikyPow2DerivativeScalingFactor in
+            // Fluid-Sim) work?
             // smoothing_derivative_scaling_factor: 12.0 / (PI * smoothing_radius.powf(4.0)),
+            // And where did I get this from? --> There is no occurrence in Fluid-Sim of:
+            //     Mathf.PI * Mathf.pow(smoothingRadius, 4) / 6
+            // ... maybe I just transcribed an early version of this calculation
+            // from a screenshot in the video.
             smoothing_derivative_scaling_factor: PI * smoothing_radius.powf(4.0) / 6.0,
             num_particles,
             particle_size,
@@ -65,16 +66,17 @@ impl Simulation {
             grid_size,
             rows,
             cols,
-            half_bounds_size: Vec2::new(window_width, window_height) / 2.0 - particle_size / 2.0,
+            half_bounds_size: Vec2::new(window_width, window_height) * scale / 2.0 - particle_size / 2.0,
             gravity: Vec2::new(0.0, -1.0 * scale),
-            target_density: 100.0,
+            target_density: 200.0,
             pressure_multiplier: 500.0,
-            collision_damping: 0.5,
+            collision_damping: 0.25,
             debug: DebugParams {
                 current_frame: 0,
-                frames_to_show: 0,
+                frames_to_show: u32::MAX,
                 log_frame: 0,
                 show_arrows: false,
+                use_gravity: true,
             },
         };
 
@@ -142,8 +144,12 @@ impl Simulation {
         self.debug.show_arrows
     }
 
-    pub fn toggle_show_arrows(&mut self) {
+    pub fn toggle_arrows(&mut self) {
         self.debug.show_arrows = !self.debug.show_arrows;
+    }
+
+    pub fn toggle_gravity(&mut self) {
+        self.debug.use_gravity = !self.debug.use_gravity;
     }
 
     pub fn log_next_frame(&mut self) {
@@ -208,11 +214,14 @@ impl Simulation {
 
     pub fn calculate_pressure(&self, particle: &mut Mut<Particle>, particles: &Vec<Particle>, delta: f32) {
         let pressure_force = self.pressure_force(&particle, &particles);
-        // particle.velocity += (self.gravity + pressure_force) * delta;
-        particle.velocity = pressure_force * delta;
+        if self.debug.use_gravity {
+            particle.velocity += (self.gravity + pressure_force) * delta;
+        } else {
+            particle.velocity = pressure_force * delta;
+        }
     }
 
-    pub fn apply_pressure(&self, particle: &mut Mut<Particle>) {
+    pub fn apply_velocity(&self, particle: &mut Mut<Particle>) {
         particle.position = particle.position + particle.velocity;
         self.resolve_collisions(particle);
     }
