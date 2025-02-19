@@ -1,93 +1,40 @@
 mod particle;
 mod sim;
+mod digit_keys;
 
 use std::time::Instant;
 
-use bevy::color::palettes::basic::YELLOW;
-use bevy::prelude::*;
-use bevy::window::PrimaryWindow;
-use rand::random;
-
+use crate::digit_keys::{key_number, DIGIT_KEYS};
 use crate::particle::Particle;
 use crate::sim::Simulation;
-
-const NUM_PARTICLES: u32 = 500;
+use bevy::color::palettes::basic::YELLOW;
+use bevy::prelude::*;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_systems(Startup, setup)
-        .add_systems(Update, (move_particles, velocity_arrows, handle_keypress))
+        .add_systems(Update, (update, velocity_arrows, handle_keypress))
         .run();
 }
 
 fn setup(
     mut commands: Commands,
-    window_query: Query<&Window, With<PrimaryWindow>>,
-    // window: Single<&Window>,
+    window: Single<&Window>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    let window = window_query.get_single().unwrap();
-    let fluid_h = window.height() * 0.67;
-    let (grid_size, cols, rows) = subdivide_into_squares(window.width(), fluid_h, NUM_PARTICLES);
-
-    // Because the kernel math blows up with smoothing radius values > 1, we don't want to use the
-    // actual window coordinates. In Sebastian's video, at 5:40, he shows a smoothing radius of 0.5
-    // that is about 12 particles wide:
-    // (https://youtu.be/rSKMYc1CQHE?si=3sibErk0e4CYC5wF&t=340)
-    // So we want the grid size to be scaled down to 0.08333 (1/12).
-    // grid_size * scale = 0.08333
-    // scale = 0.08333 / grid_size
-    let scale = 0.08333 / grid_size
-        // * 0.67 // don't commit
-        ;
-    let grid_size = grid_size * scale * 0.9;
-
-    let particle_size = grid_size * 0.5;
-
-    commands.spawn(Simulation::new(window.width() * scale, window.height() * scale, particle_size, scale));
-
-    let color = Color::linear_rgb(0.0, 0.3, 1.0);
-
-    commands.spawn((Camera2d, Transform::from_scale(Vec3::splat(scale))));
-    let scaled_width = grid_size * cols as f32;
-    let scaled_height = grid_size * rows as f32;
-
-    let x_start = -scaled_width / 2.0;
-    let y_start = -scaled_height / 2.0;
-    for r in 0..rows {
-        for c in 0..cols {
-            let x = x_start + random::<f32>() * scaled_width;
-            let y = y_start + random::<f32>() * scaled_height;
-            // let velocity = Vec2::new(random::<f32>() * 1.0 - 0.5, random::<f32>() * 1.0 - 0.5) * particle_size / 2.0;
-            let velocity = Vec2::ZERO;
-            commands.spawn((
-                Mesh2d(meshes.add(Circle {
-                    radius: particle_size / 2.0,
-                })),
-                MeshMaterial2d(materials.add(color)),
-                Transform::from_translation(Vec3 { x, y, z: 0.0 }),
-                Particle {
-                    id: (r * cols + c) as usize,
-                    position: Vec2 { x, y },
-                    velocity,
-                    density: 0.0,
-                },
-            ));
-        }
-    }
+    let sim = Simulation::new(window.width(), window.height());
+    commands.spawn((Camera2d, Transform::from_scale(Vec3::splat(sim.scale))));
+    sim.spawn_particles(&mut commands, &mut meshes, &mut materials);
+    commands.spawn(sim);
 }
 
-fn move_particles(
+fn update(
     mut particle_query: Query<(&mut Transform, &mut Particle)>,
     time: Res<Time>,
     mut sim: Single<&mut Simulation>,
 ) {
-    if sim.frames_to_show() == 0 {
-        return;
-    }
-
     // I'll hopefully figure this out later (can't have both a mutable and non-mutable ref to the
     // same collection), but for now just make a copy of the particles.
     let particle_positions: Vec<Vec2> = particle_query.iter().map(|(_, p)| p.position).collect();
@@ -97,52 +44,44 @@ fn move_particles(
         particle.density = sim.density(&particle, &particle_positions);
     });
 
-    if sim.log_this_frame() {
-        println!(
-            "highest density:{}",
-            particle_query
-                .iter()
-                .max_by(|(_, p1), (_, p2)| p1.density.total_cmp(&p2.density))
-                .unwrap()
-                .1
-                .density
-        );
-        let total_density = particle_query.iter().map(|(_, p)| p.density).sum::<f32>() / NUM_PARTICLES as f32;
-        println!("average density:{}", total_density);
-    }
-
     let particles: Vec<Particle> = particle_query.iter().map(|(_, p)| p.clone()).collect();
-    particle_query.par_iter_mut().for_each(|(mut transform, mut particle)| {
-        sim.apply_pressure(&mut particle, &particles, time.delta_secs());
-
-        transform.translation.x = particle.position.x;
-        transform.translation.y = particle.position.y;
+    particle_query.par_iter_mut().for_each(|(_, mut particle)| {
+        sim.calculate_pressure(&mut particle, &particles, time.delta_secs());
     });
 
-    if sim.log_this_frame() {
-        // Dev build, 500 particles:
-        //   par_iter_mut: avg 0.00226 sec
-        //   iter_mut:     avg 0.00765 sec
-        //   So, 3.38 times slower.
-        // Release build, 500 particles:
-        //   par_iter_mut: avg 0.000281 sec
-        //   iter_mut:     avg 0.000822 sec
-        //   2.926 times slower.
-        // 5000 particles:
-        //   release: 0.015326, dev: 0.10116934342857142 --> 6.6 times slower!
-        println!("elapsed: {}", Instant::now().duration_since(start_time).as_secs_f32());
+    if sim.frames_to_advance() > 0 {
+        particle_query.par_iter_mut().for_each(|(mut transform, mut particle)| {
+            sim.apply_pressure(&mut particle);
+
+            transform.translation.x = particle.position.x;
+            transform.translation.y = particle.position.y;
+        });
     }
+
+    // Log the density
+    let highest_density = particle_query.iter().map(|(_, p)| p.density).reduce(f32::max).unwrap();
+    let average_density = particle_query.iter().map(|(_, p)| p.density).sum::<f32>() / sim.num_particles as f32;
+    sim.debug(format!("highest density: {highest_density}"));
+    sim.debug(format!("average density: {average_density}"));
+
+    // Dev build, 500 particles:
+    //   par_iter_mut: avg 0.00226 sec
+    //   iter_mut:     avg 0.00765 sec
+    //   So, 3.38 times slower.
+    // Release build, 500 particles:
+    //   par_iter_mut: avg 0.000281 sec
+    //   iter_mut:     avg 0.000822 sec
+    //   2.926 times slower.
+    // 5000 particles:
+    //   release: 0.015326, dev: 0.10116934342857142 --> 6.6 times slower!
+    sim.debug(format!("elapsed: {}", Instant::now().duration_since(start_time).as_secs_f32()));
 
     sim.end_frame();
 }
 
-fn velocity_arrows(
-    mut gizmos: Gizmos,
-    mut particle_query: Query<(&Transform, &mut Particle)>,
-    sim: Single<&Simulation>,
-) {
+fn velocity_arrows(mut gizmos: Gizmos, particle_query: Query<(&Transform, &Particle)>, sim: Single<&Simulation>) {
     if sim.show_arrows() {
-        particle_query.iter_mut().for_each(|(transform, particle)| {
+        particle_query.iter().for_each(|(transform, particle)| {
             let arrow_end = transform.translation.xy() + particle.velocity * 10.0;
             gizmos
                 .arrow(transform.translation.xy().extend(0.0), arrow_end.extend(0.0), YELLOW)
@@ -151,36 +90,13 @@ fn velocity_arrows(
     }
 }
 
-const DIGIT_KEYS: [KeyCode; 20] = [
-    KeyCode::Digit1,
-    KeyCode::Digit2,
-    KeyCode::Digit3,
-    KeyCode::Digit4,
-    KeyCode::Digit5,
-    KeyCode::Digit6,
-    KeyCode::Digit7,
-    KeyCode::Digit8,
-    KeyCode::Digit9,
-    KeyCode::Digit0,
-    KeyCode::Numpad1,
-    KeyCode::Numpad2,
-    KeyCode::Numpad3,
-    KeyCode::Numpad4,
-    KeyCode::Numpad5,
-    KeyCode::Numpad6,
-    KeyCode::Numpad7,
-    KeyCode::Numpad8,
-    KeyCode::Numpad9,
-    KeyCode::Numpad0,
-];
-
 fn handle_keypress(
     kb: Res<ButtonInput<KeyCode>>,
     mut app_exit: EventWriter<AppExit>,
     mut sim: Single<&mut Simulation>,
 ) {
     if kb.just_pressed(KeyCode::Space) {
-        if sim.frames_to_show() == 0 {
+        if sim.frames_to_advance() == 0 {
             sim.set_frames_to_show(u32::MAX);
         } else {
             sim.set_frames_to_show(0);
@@ -188,51 +104,24 @@ fn handle_keypress(
     }
     if kb.any_just_pressed(DIGIT_KEYS) {
         kb.get_just_pressed().for_each(|key| {
-            let count = match key {
-                KeyCode::Digit1 | KeyCode::Numpad1 => 1,
-                KeyCode::Digit2 | KeyCode::Numpad2 => 2,
-                KeyCode::Digit3 | KeyCode::Numpad3 => 3,
-                KeyCode::Digit4 | KeyCode::Numpad4 => 4,
-                KeyCode::Digit5 | KeyCode::Numpad5 => 5,
-                KeyCode::Digit6 | KeyCode::Numpad6 => 6,
-                KeyCode::Digit7 | KeyCode::Numpad7 => 7,
-                KeyCode::Digit8 | KeyCode::Numpad8 => 8,
-                KeyCode::Digit9 | KeyCode::Numpad9 => 9,
-                KeyCode::Digit0 | KeyCode::Numpad0 => 10,
-                _ => 0,
-            } + sim.frames_to_show();
-
+            let count = sim.frames_to_advance() + key_number(key);
             sim.set_frames_to_show(count);
         });
-    }
-    if kb.just_pressed(KeyCode::KeyL) {
-        sim.log_next_frame();
     }
     if kb.just_pressed(KeyCode::KeyA) {
         sim.toggle_show_arrows();
     }
+    if kb.just_pressed(KeyCode::KeyL) {
+        sim.log_next_frame();
+    }
+    if kb.just_pressed(KeyCode::KeyS) {
+        if kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight) {
+            sim.inc_smoothing_radius();
+        } else {
+            sim.dec_smoothing_radius();
+        }
+    }
     if kb.just_pressed(KeyCode::Escape) {
         app_exit.send(AppExit::Success);
     }
-}
-
-/// Divides a rectangular region into (roughly) n squares.
-///
-/// Got it from ChatGPT, but as usual even this straightforward function had errors that
-/// I had to fix...
-fn subdivide_into_squares(w: f32, h: f32, n: u32) -> (f32, u32, u32) {
-    // Step 1: Calculate the target area of each square
-    let target_area = (w * h) / n as f32;
-
-    // Step 2: Calculate the side length of each square
-    let side_length = target_area.sqrt();
-
-    // Step 3: Calculate the number of columns and rows
-    let columns = w / side_length;
-    let rows = n as f32 / columns;
-
-    // Step 4: Adjust the final side length to fit evenly
-    let side_length = f32::min(w / columns, h / rows);
-
-    (side_length, columns as u32, rows as u32)
 }

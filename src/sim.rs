@@ -1,14 +1,19 @@
-use bevy::math::Vec2;
-use bevy::prelude::{Component, Mut};
-use std::f32::consts::PI;
-
 use crate::Particle;
+use bevy::prelude::*;
+use rand::random;
+use std::f32::consts::PI;
 
 #[derive(Component, Clone, Debug)]
 pub struct Simulation {
     pub smoothing_radius: f32,
     pub smoothing_scaling_factor: f32,
     pub smoothing_derivative_scaling_factor: f32,
+    pub num_particles: u32,
+    pub particle_size: f32,
+    pub scale: f32,
+    pub grid_size: f32,
+    pub rows: u32,
+    pub cols: u32,
     pub half_bounds_size: Vec2,
     pub gravity: Vec2,
     pub target_density: f32,
@@ -19,13 +24,33 @@ pub struct Simulation {
 
 #[derive(Clone, Debug)]
 struct DebugParams {
+    current_frame: u32,
     frames_to_show: u32,
-    log_this_frame: bool,
+    log_frame: u32,
     show_arrows: bool,
 }
 
 impl Simulation {
-    pub fn new(box_width: f32, box_height: f32, particle_size: f32, scale: f32) -> Simulation {
+    pub fn new(window_width: f32, window_height: f32) -> Simulation {
+        let fluid_h = window_height * 0.67;
+        let num_particles = 1000;
+        let (grid_size, cols, rows) = Self::subdivide_into_squares(window_width, fluid_h, num_particles);
+
+        // Because the kernel math blows up with smoothing radius values > 1, we don't want to use the
+        // actual window coordinates. In Sebastian's video, at 5:40, he shows a smoothing radius of 0.5
+        // that is about 12 particles wide:
+        // (https://youtu.be/rSKMYc1CQHE?si=3sibErk0e4CYC5wF&t=340)
+        // So we want the grid size to be scaled down to 0.08333 (1/12).
+        // grid_size * scale = 0.08333
+        // scale = 0.08333 / grid_size
+        let scale = 0.08333 / grid_size;
+        let grid_size = grid_size * scale
+            * 0.67 // nocommit, just here to see how the fluid "edge" behaves, as opposed to the
+            // bounding box edge.
+            ;
+        let particle_size = grid_size * 0.5
+            * 0.0001 // nocommit
+            ;
         let smoothing_radius = 0.2;
         let simulation = Simulation {
             smoothing_radius,
@@ -34,14 +59,21 @@ impl Simulation {
             // SpikyPow2DerivativeScalingFactor: 12 / (Mathf.Pow(smoothingRadius, 4) * Mathf.PI)
             // smoothing_derivative_scaling_factor: 12.0 / (PI * smoothing_radius.powf(4.0)),
             smoothing_derivative_scaling_factor: PI * smoothing_radius.powf(4.0) / 6.0,
-            half_bounds_size: Vec2::new(box_width, box_height) / 2.0 - particle_size / 2.0,
+            num_particles,
+            particle_size,
+            scale,
+            grid_size,
+            rows,
+            cols,
+            half_bounds_size: Vec2::new(window_width, window_height) / 2.0 - particle_size / 2.0,
             gravity: Vec2::new(0.0, -1.0 * scale),
             target_density: 100.0,
             pressure_multiplier: 500.0,
             collision_damping: 0.5,
             debug: DebugParams {
+                current_frame: 0,
                 frames_to_show: 0,
-                log_this_frame: false,
+                log_frame: 0,
                 show_arrows: false,
             },
         };
@@ -51,7 +83,48 @@ impl Simulation {
         simulation
     }
 
-    pub fn frames_to_show(&self) -> u32 {
+    pub fn spawn_particles(&self,
+                           commands: &mut Commands,
+                           meshes: &mut ResMut<Assets<Mesh>>,
+                           materials: &mut ResMut<Assets<ColorMaterial>>,
+    ) {
+        let color = Color::linear_rgb(0.0, 0.3, 1.0);
+        let scaled_width = self.grid_size * self.cols as f32;
+        let scaled_height = self.grid_size * self.rows as f32;
+
+        let mut id = 0;
+        let x_start = -scaled_width / 2.0;
+        let y_start = -scaled_height / 2.0;
+        for r in 0..self.rows {
+            for c in 0..self.cols {
+                // If we go back to random placement, we can get rid of grid_size, rows, cols, etc.
+                // let x = x_start + random::<f32>() * scaled_width;
+                // let y = y_start + random::<f32>() * scaled_height;
+                let x = x_start + (c as f32 + 0.5) * self.grid_size
+                    + random::<f32>() * self.grid_size - self.grid_size / 2.0;
+                let y = y_start + scaled_height - (r as f32 + 0.5) * self.grid_size
+                    + random::<f32>() * self.grid_size - self.grid_size / 2.0;
+                // let velocity = Vec2::new(random::<f32>() * 1.0 - 0.5, random::<f32>() * 1.0 - 0.5) * particle_size / 2.0;
+                let velocity = Vec2::ZERO;
+                commands.spawn((
+                    Mesh2d(meshes.add(Circle {
+                        radius: self.particle_size / 2.0,
+                    })),
+                    MeshMaterial2d(materials.add(color)),
+                    Transform::from_translation(Vec3 { x, y, z: 0.0 }),
+                    Particle {
+                        id,
+                        position: Vec2 { x, y },
+                        velocity,
+                        density: 0.0,
+                    },
+                ));
+                id += 1;
+            }
+        }
+    }
+
+    pub fn frames_to_advance(&self) -> u32 {
         self.debug.frames_to_show
     }
 
@@ -59,16 +132,14 @@ impl Simulation {
         self.debug.frames_to_show = val;
     }
 
-    pub fn log_this_frame(&self) -> bool {
-        self.debug.log_this_frame
+    pub fn debug(&self, message: String) {
+        if self.debug.log_frame == self.debug.current_frame {
+            println!("{message}");
+        }
     }
 
     pub fn show_arrows(&self) -> bool {
         self.debug.show_arrows
-    }
-
-    pub fn end_frame(&mut self) {
-        self.debug.log_this_frame = false;
     }
 
     pub fn toggle_show_arrows(&mut self) {
@@ -76,7 +147,29 @@ impl Simulation {
     }
 
     pub fn log_next_frame(&mut self) {
-        self.debug.log_this_frame = true;
+        self.debug.log_frame = self.debug.current_frame + 1;
+    }
+
+    pub fn inc_smoothing_radius(&mut self) {
+        self.smoothing_radius += 0.1;
+        self.smoothing_scaling_factor = 6.0 / (PI * self.smoothing_radius.powf(4.0));
+        self.smoothing_derivative_scaling_factor = PI * self.smoothing_radius.powf(4.0) / 6.0;
+        println!("smoothing_radius: {}", self.smoothing_radius);
+        self.log_next_frame();
+    }
+
+    pub fn dec_smoothing_radius(&mut self) {
+        if self.smoothing_radius > 0.1 {
+            self.smoothing_radius -= 0.1;
+            self.smoothing_scaling_factor = 6.0 / (PI * self.smoothing_radius.powf(4.0));
+            self.smoothing_derivative_scaling_factor = PI * self.smoothing_radius.powf(4.0) / 6.0;
+            println!("smoothing_radius: {}", self.smoothing_radius);
+            self.log_next_frame();
+        }
+    }
+
+    pub fn end_frame(&mut self) {
+        self.debug.current_frame += 1;
     }
 
     pub fn density(&self, pt: &Particle, particle_positions: &Vec<Vec2>) -> f32 {
@@ -113,10 +206,13 @@ impl Simulation {
         }
     }
 
-    pub fn apply_pressure(&self, particle: &mut Mut<Particle>, particles: &Vec<Particle>, delta: f32) {
+    pub fn calculate_pressure(&self, particle: &mut Mut<Particle>, particles: &Vec<Particle>, delta: f32) {
         let pressure_force = self.pressure_force(&particle, &particles);
         // particle.velocity += (self.gravity + pressure_force) * delta;
         particle.velocity = pressure_force * delta;
+    }
+
+    pub fn apply_pressure(&self, particle: &mut Mut<Particle>) {
         particle.position = particle.position + particle.velocity;
         self.resolve_collisions(particle);
     }
@@ -158,5 +254,26 @@ impl Simulation {
             gradient += direction * slope * pressure / particle.density;
         }
         gradient // / pt.density
+    }
+
+    /// Divides a rectangular region into (roughly) n squares.
+    ///
+    /// Got it from ChatGPT, but as usual even this straightforward function had errors that
+    /// I had to fix...
+    fn subdivide_into_squares(w: f32, h: f32, n: u32) -> (f32, u32, u32) {
+        // Step 1: Calculate the target area of each square
+        let target_area = (w * h) / n as f32;
+
+        // Step 2: Calculate the side length of each square
+        let side_length = target_area.sqrt();
+
+        // Step 3: Calculate the number of columns and rows
+        let columns = w / side_length;
+        let rows = n as f32 / columns;
+
+        // Step 4: Adjust the final side length to fit evenly
+        let side_length = f32::min(w / columns, h / rows);
+
+        (side_length, columns as u32, rows as u32)
     }
 }
