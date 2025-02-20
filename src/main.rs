@@ -1,14 +1,15 @@
+mod digit_keys;
 mod particle;
 mod sim;
-mod digit_keys;
 
 use std::time::Instant;
+
+use bevy::color::palettes::basic::YELLOW;
+use bevy::prelude::*;
 
 use crate::digit_keys::{key_number, DIGIT_KEYS};
 use crate::particle::Particle;
 use crate::sim::Simulation;
-use bevy::color::palettes::basic::YELLOW;
-use bevy::prelude::*;
 
 fn main() {
     App::new()

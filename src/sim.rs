@@ -1,7 +1,9 @@
-use crate::Particle;
+use std::f32::consts::PI;
+
 use bevy::prelude::*;
 use rand::random;
-use std::f32::consts::PI;
+
+use crate::Particle;
 
 #[derive(Component, Clone, Debug)]
 pub struct Simulation {
@@ -85,10 +87,11 @@ impl Simulation {
         simulation
     }
 
-    pub fn spawn_particles(&self,
-                           commands: &mut Commands,
-                           meshes: &mut ResMut<Assets<Mesh>>,
-                           materials: &mut ResMut<Assets<ColorMaterial>>,
+    pub fn spawn_particles(
+        &self,
+        commands: &mut Commands,
+        meshes: &mut ResMut<Assets<Mesh>>,
+        materials: &mut ResMut<Assets<ColorMaterial>>,
     ) {
         let color = Color::linear_rgb(0.0, 0.3, 1.0);
         let scaled_width = self.grid_size * self.cols as f32;
@@ -102,10 +105,10 @@ impl Simulation {
                 // If we go back to random placement, we can get rid of grid_size, rows, cols, etc.
                 // let x = x_start + random::<f32>() * scaled_width;
                 // let y = y_start + random::<f32>() * scaled_height;
-                let x = x_start + (c as f32 + 0.5) * self.grid_size
-                    + random::<f32>() * self.grid_size - self.grid_size / 2.0;
-                let y = y_start + scaled_height - (r as f32 + 0.5) * self.grid_size
-                    + random::<f32>() * self.grid_size - self.grid_size / 2.0;
+                let x = x_start + (c as f32 + 0.5) * self.grid_size + random::<f32>() * self.grid_size
+                    - self.grid_size / 2.0;
+                let y = y_start + scaled_height - (r as f32 + 0.5) * self.grid_size + random::<f32>() * self.grid_size
+                    - self.grid_size / 2.0;
                 // let velocity = Vec2::new(random::<f32>() * 1.0 - 0.5, random::<f32>() * 1.0 - 0.5) * particle_size / 2.0;
                 let velocity = Vec2::ZERO;
                 commands.spawn((
