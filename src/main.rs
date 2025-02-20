@@ -4,18 +4,18 @@ mod sim;
 
 use std::time::Instant;
 
-use bevy::color::palettes::basic::YELLOW;
-use bevy::prelude::*;
-
 use crate::digit_keys::{key_number, DIGIT_KEYS};
 use crate::particle::Particle;
 use crate::sim::Simulation;
+use bevy::color::palettes::basic::YELLOW;
+use bevy::prelude::*;
+use bevy::window::WindowResized;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_systems(Startup, setup)
-        .add_systems(Update, (update, velocity_arrows, handle_keypress))
+        .add_systems(Update, (update, velocity_arrows, handle_keypress, on_resize))
         .run();
 }
 
@@ -127,5 +127,17 @@ fn handle_keypress(
     }
     if kb.just_pressed(KeyCode::Escape) {
         app_exit.send(AppExit::Success);
+    }
+}
+
+/// This system shows how to respond to a window being resized.
+/// Whenever the window is resized, the text will update with the new resolution.
+fn on_resize(
+    mut resize_reader: EventReader<WindowResized>,
+    mut sim: Single<&mut Simulation>,
+) {
+    for e in resize_reader.read() {
+        // When resolution is being changed
+        sim.on_resize(e.width, e.height);
     }
 }

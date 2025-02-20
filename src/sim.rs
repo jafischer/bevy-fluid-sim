@@ -129,6 +129,42 @@ impl Simulation {
         }
     }
 
+    pub fn density(&self, pt: &Particle, particle_positions: &Vec<Vec2>) -> f32 {
+        let mut density = 0.0;
+
+        for (i, particle_position) in particle_positions.iter().enumerate() {
+            if i == pt.id {
+                continue;
+            }
+            let distance = (particle_position - pt.position).length().max(0.000000001);
+            let influence = self.smoothing_kernel(distance);
+            density += influence;
+        }
+        density
+    }
+
+    pub fn calculate_pressure(&self, particle: &mut Mut<Particle>, particles: &Vec<Particle>, delta: f32) {
+        let pressure_force = self.pressure_force(&particle, &particles);
+        if self.debug.use_gravity {
+            particle.velocity += (self.gravity + pressure_force) * delta;
+        } else {
+            particle.velocity = pressure_force * delta;
+        }
+    }
+
+    pub fn apply_velocity(&self, particle: &mut Mut<Particle>) {
+        particle.position = particle.position + particle.velocity;
+        self.resolve_collisions(particle);
+    }
+
+    pub fn on_resize(&mut self, window_width: f32, window_height: f32) {
+        self.half_bounds_size = Vec2::new(window_width, window_height) * self.scale / 2.0 - self.particle_size / 2.0;
+    }
+
+    pub fn end_frame(&mut self) {
+        self.debug.current_frame += 1;
+    }
+
     pub fn frames_to_advance(&self) -> u32 {
         self.debug.frames_to_show
     }
@@ -177,24 +213,6 @@ impl Simulation {
         }
     }
 
-    pub fn end_frame(&mut self) {
-        self.debug.current_frame += 1;
-    }
-
-    pub fn density(&self, pt: &Particle, particle_positions: &Vec<Vec2>) -> f32 {
-        let mut density = 0.0;
-
-        for (i, particle_position) in particle_positions.iter().enumerate() {
-            if i == pt.id {
-                continue;
-            }
-            let distance = (particle_position - pt.position).length().max(0.000000001);
-            let influence = self.smoothing_kernel(distance);
-            density += influence;
-        }
-        density
-    }
-
     fn smoothing_kernel(&self, distance: f32) -> f32 {
         if distance >= self.smoothing_radius {
             0f32
@@ -213,20 +231,6 @@ impl Simulation {
             // return -v * SpikyPow2DerivativeScalingFactor;
             (distance - self.smoothing_radius) * self.smoothing_derivative_scaling_factor
         }
-    }
-
-    pub fn calculate_pressure(&self, particle: &mut Mut<Particle>, particles: &Vec<Particle>, delta: f32) {
-        let pressure_force = self.pressure_force(&particle, &particles);
-        if self.debug.use_gravity {
-            particle.velocity += (self.gravity + pressure_force) * delta;
-        } else {
-            particle.velocity = pressure_force * delta;
-        }
-    }
-
-    pub fn apply_velocity(&self, particle: &mut Mut<Particle>) {
-        particle.position = particle.position + particle.velocity;
-        self.resolve_collisions(particle);
     }
 
     fn shared_pressure(&self, density1: f32, density2: f32) -> f32 {
