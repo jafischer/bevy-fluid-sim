@@ -4,12 +4,13 @@ mod sim;
 
 use std::time::Instant;
 
-use crate::digit_keys::{key_number, DIGIT_KEYS};
-use crate::particle::Particle;
-use crate::sim::Simulation;
 use bevy::color::palettes::basic::YELLOW;
 use bevy::prelude::*;
 use bevy::window::WindowResized;
+
+use crate::digit_keys::{key_number, DIGIT_KEYS};
+use crate::particle::Particle;
+use crate::sim::Simulation;
 
 fn main() {
     App::new()
@@ -95,6 +96,7 @@ fn handle_keypress(
     kb: Res<ButtonInput<KeyCode>>,
     mut app_exit: EventWriter<AppExit>,
     mut sim: Single<&mut Simulation>,
+    particle_query: Query<&mut Particle>,
 ) {
     if kb.just_pressed(KeyCode::Space) {
         if sim.frames_to_advance() == 0 {
@@ -118,6 +120,9 @@ fn handle_keypress(
     if kb.just_pressed(KeyCode::KeyL) {
         sim.log_next_frame();
     }
+    if kb.just_pressed(KeyCode::KeyR) {
+        sim.reset(particle_query);
+    }
     if kb.just_pressed(KeyCode::KeyS) {
         if kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight) {
             sim.inc_smoothing_radius();
@@ -132,10 +137,7 @@ fn handle_keypress(
 
 /// This system shows how to respond to a window being resized.
 /// Whenever the window is resized, the text will update with the new resolution.
-fn on_resize(
-    mut resize_reader: EventReader<WindowResized>,
-    mut sim: Single<&mut Simulation>,
-) {
+fn on_resize(mut resize_reader: EventReader<WindowResized>, mut sim: Single<&mut Simulation>) {
     for e in resize_reader.read() {
         // When resolution is being changed
         sim.on_resize(e.width, e.height);

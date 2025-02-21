@@ -10,12 +10,9 @@ pub struct Simulation {
     pub smoothing_radius: f32,
     pub smoothing_scaling_factor: f32,
     pub smoothing_derivative_scaling_factor: f32,
-    pub num_particles: u32,
+    pub num_particles: usize,
     pub particle_size: f32,
     pub scale: f32,
-    pub grid_size: f32,
-    pub rows: u32,
-    pub cols: u32,
     pub half_bounds_size: Vec2,
     pub gravity: Vec2,
     pub target_density: f32,
@@ -36,8 +33,8 @@ struct DebugParams {
 impl Simulation {
     pub fn new(window_width: f32, window_height: f32) -> Simulation {
         let fluid_h = window_height * 0.67;
-        let num_particles = 1000;
-        let (grid_size, cols, rows) = Self::subdivide_into_squares(window_width, fluid_h, num_particles);
+        let num_particles = 5000;
+        let (grid_size, _, _) = Self::subdivide_into_squares(window_width, fluid_h, num_particles);
 
         // Because the kernel math blows up with smoothing radius values > 1, we don't want to use the
         // actual window coordinates. In Sebastian's video, at 5:40, he shows a smoothing radius of 0.5
@@ -65,11 +62,9 @@ impl Simulation {
             num_particles,
             particle_size,
             scale,
-            grid_size,
-            rows,
-            cols,
             half_bounds_size: Vec2::new(window_width, window_height) * scale / 2.0 - particle_size / 2.0,
             gravity: Vec2::new(0.0, -1.0 * scale),
+            // TODO: calculate target_density based on window size & num_particles.
             target_density: 200.0,
             pressure_multiplier: 500.0,
             collision_damping: 0.25,
@@ -94,39 +89,33 @@ impl Simulation {
         materials: &mut ResMut<Assets<ColorMaterial>>,
     ) {
         let color = Color::linear_rgb(0.0, 0.3, 1.0);
-        let scaled_width = self.grid_size * self.cols as f32;
-        let scaled_height = self.grid_size * self.rows as f32;
 
-        let mut id = 0;
-        let x_start = -scaled_width / 2.0;
-        let y_start = -scaled_height / 2.0;
-        for r in 0..self.rows {
-            for c in 0..self.cols {
-                // If we go back to random placement, we can get rid of grid_size, rows, cols, etc.
-                // let x = x_start + random::<f32>() * scaled_width;
-                // let y = y_start + random::<f32>() * scaled_height;
-                let x = x_start + (c as f32 + 0.5) * self.grid_size + random::<f32>() * self.grid_size
-                    - self.grid_size / 2.0;
-                let y = y_start + scaled_height - (r as f32 + 0.5) * self.grid_size + random::<f32>() * self.grid_size
-                    - self.grid_size / 2.0;
-                // let velocity = Vec2::new(random::<f32>() * 1.0 - 0.5, random::<f32>() * 1.0 - 0.5) * particle_size / 2.0;
-                let velocity = Vec2::ZERO;
-                commands.spawn((
-                    Mesh2d(meshes.add(Circle {
-                        radius: self.particle_size / 2.0,
-                    })),
-                    MeshMaterial2d(materials.add(color)),
-                    Transform::from_translation(Vec3 { x, y, z: 0.0 }),
-                    Particle {
-                        id,
-                        position: Vec2 { x, y },
-                        velocity,
-                        density: 0.0,
-                    },
-                ));
-                id += 1;
-            }
+        for id in 0..self.num_particles {
+            let mut particle = Particle {
+                id,
+                ..default()
+            };
+
+            self.place_particle(&mut particle);
+
+            commands.spawn((
+                Mesh2d(meshes.add(Circle {
+                    radius: self.particle_size / 2.0,
+                })),
+                MeshMaterial2d(materials.add(color)),
+                Transform::from_translation(particle.position.extend(0.0)),
+                particle,
+            ));
         }
+    }
+
+    fn place_particle(&self, particle: &mut Particle) {
+        let x = -self.half_bounds_size.x + random::<f32>() * self.half_bounds_size.x * 2.0;
+        let y = -self.half_bounds_size.y + random::<f32>() * self.half_bounds_size.y * 2.0;
+        let velocity = Vec2::new(random::<f32>() - 0.5, random::<f32>() - 0.5) * self.particle_size;
+        // let velocity = Vec2::ZERO;
+        particle.position = Vec2::new(x, y);
+        particle.velocity = velocity;
     }
 
     pub fn density(&self, pt: &Particle, particle_positions: &Vec<Vec2>) -> f32 {
@@ -155,6 +144,14 @@ impl Simulation {
     pub fn apply_velocity(&self, particle: &mut Mut<Particle>) {
         particle.position = particle.position + particle.velocity;
         self.resolve_collisions(particle);
+    }
+
+    pub fn reset(&mut self,
+                 mut particle_query: Query<&mut Particle>,
+    ) {
+        particle_query.par_iter_mut().for_each(|mut particle| {
+            self.place_particle(&mut particle);
+        })
     }
 
     pub fn on_resize(&mut self, window_width: f32, window_height: f32) {
@@ -276,7 +273,7 @@ impl Simulation {
     ///
     /// Got it from ChatGPT, but as usual even this straightforward function had errors that
     /// I had to fix...
-    fn subdivide_into_squares(w: f32, h: f32, n: u32) -> (f32, u32, u32) {
+    fn subdivide_into_squares(w: f32, h: f32, n: usize) -> (f32, usize, usize) {
         // Step 1: Calculate the target area of each square
         let target_area = (w * h) / n as f32;
 
@@ -290,6 +287,6 @@ impl Simulation {
         // Step 4: Adjust the final side length to fit evenly
         let side_length = f32::min(w / columns, h / rows);
 
-        (side_length, columns as u32, rows as u32)
+        (side_length, columns as usize, rows as usize)
     }
 }
