@@ -63,7 +63,7 @@ impl Simulation {
             particle_size,
             scale,
             half_bounds_size: Vec2::new(window_width, window_height) * scale / 2.0 - particle_size / 2.0,
-            gravity: Vec2::new(0.0, -1.0 * scale),
+            gravity: Vec2::new(0.0, -10.0 * scale),
             // TODO: calculate target_density based on window size & num_particles.
             target_density: 200.0,
             pressure_multiplier: 500.0,
@@ -139,6 +139,8 @@ impl Simulation {
         } else {
             particle.velocity = pressure_force * delta;
         }
+        // Poor man's viscosity:
+        particle.velocity = particle.velocity.clamp_length_max(50.0 * self.particle_size * delta);
     }
 
     pub fn apply_velocity(&self, particle: &mut Mut<Particle>) {
