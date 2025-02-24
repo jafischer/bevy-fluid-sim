@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use rand::random;
 
 use crate::Particle;
+use crate::spatial_hash::{get_cell_2d, hash_cell_2d, key_from_hash, OFFSETS_2D};
 
 #[derive(Component, Clone, Debug)]
 pub struct Simulation {
@@ -17,7 +18,14 @@ pub struct Simulation {
     pub gravity: Vec2,
     pub target_density: f32,
     pub pressure_multiplier: f32,
+    pub near_pressure_multiplier: f32,
     pub collision_damping: f32,
+
+    // Particle information:
+    pub positions: Vec<Vec2>,
+    pub velocities: Vec<Vec2>,
+    pub densities: Vec<f32>,
+
     debug: DebugParams,
 }
 
@@ -33,11 +41,11 @@ struct DebugParams {
 impl Simulation {
     pub fn new(window_width: f32, window_height: f32) -> Simulation {
         let fluid_h = window_height * 0.67;
-        let num_particles = 5000;
+        let num_particles = 1000;
         let (grid_size, _, _) = Self::subdivide_into_squares(window_width, fluid_h, num_particles);
 
-        // Because the kernel math blows up with smoothing radius values > 1, we don't want to use the
-        // actual window coordinates. In Sebastian's video, at 5:40, he shows a smoothing radius of 0.5
+        // Because Sebastian's kernel math blows up with smoothing self.smoothing_radius values > 1, we don't want to use the
+        // actual window coordinates. In Sebastian's video, at 5:40, he shows a smoothing self.smoothing_radius of 0.5
         // that is about 12 particles wide:
         // (https://youtu.be/rSKMYc1CQHE?si=3sibErk0e4CYC5wF&t=340)
         // So we want the grid size to be scaled down to 0.08333 (1/12).
@@ -47,27 +55,39 @@ impl Simulation {
         let grid_size = grid_size * scale;
         let particle_size = grid_size * 0.5;
         let smoothing_radius = 0.2;
-        let simulation = Simulation {
+
+        let mut positions: Vec<Vec2> = Vec::with_capacity(num_particles);
+        positions.resize_with(num_particles, Default::default);
+        let mut velocities: Vec<Vec2> = Vec::with_capacity(num_particles);
+        velocities.resize_with(num_particles, Default::default);
+        let mut densities: Vec<f32> = Vec::with_capacity(num_particles);
+        densities.resize_with(num_particles, Default::default);
+        let mut spatial_offsets: Vec<u32> = Vec::with_capacity(num_particles);
+        spatial_offsets.resize_with(num_particles, Default::default);
+        let mut spatial_indices: Vec<[u32; 3]> = Vec::with_capacity(num_particles);
+        spatial_indices.resize_with(num_particles, Default::default);
+        let mut predicted_positions: Vec<Vec2> = Vec::with_capacity(num_particles);
+        predicted_positions.resize_with(num_particles, Default::default);
+
+
+        let sim = Simulation {
             smoothing_radius,
-            // This is SpikyPow2ScalingFactor in Fluid-Sim.
             smoothing_scaling_factor: 6.0 / (PI * smoothing_radius.powf(4.0)),
-            // Why doesn't this version (corresponding to SpikyPow2DerivativeScalingFactor in
-            // Fluid-Sim) work?
-            // smoothing_derivative_scaling_factor: 12.0 / (PI * smoothing_radius.powf(4.0)),
-            // And where did I get this from? --> There is no occurrence in Fluid-Sim of:
-            //     Mathf.PI * Mathf.pow(smoothingRadius, 4) / 6
-            // ... maybe I just transcribed an early version of this calculation
-            // from a screenshot in the video.
             smoothing_derivative_scaling_factor: PI * smoothing_radius.powf(4.0) / 6.0,
             num_particles,
             particle_size,
             scale,
             half_bounds_size: Vec2::new(window_width, window_height) * scale / 2.0 - particle_size / 2.0,
             gravity: Vec2::new(0.0, -10.0 * scale),
-            // TODO: calculate target_density based on window size & num_particles.
-            target_density: 200.0,
+            target_density: 200.0, // TODO: calculate target_density based on window size & num_particles.
             pressure_multiplier: 500.0,
+            near_pressure_multiplier: 50.0,
             collision_damping: 0.25,
+
+            positions,
+            velocities,
+            densities,
+
             debug: DebugParams {
                 current_frame: 0,
                 frames_to_show: u32::MAX,
@@ -77,83 +97,113 @@ impl Simulation {
             },
         };
 
-        println!("{simulation:?}");
+        println!("smoothing_radius: {}", sim.smoothing_radius);
+        println!("smoothing_scaling_factor: {}", sim.smoothing_scaling_factor);
+        println!("smoothing_derivative_scaling_factor: {}", sim.smoothing_derivative_scaling_factor);
+        println!("num_particles: {}", sim.num_particles);
+        println!("particle_size: {}", sim.particle_size);
+        println!("scale: {}", sim.scale);
+        println!("half_bounds_size: {}", sim.half_bounds_size);
+        println!("gravity: {}", sim.gravity);
+        println!("target_density: {}", sim.target_density);
+        println!("pressure_multiplier: {}", sim.pressure_multiplier);
+        println!("near_pressure_multiplier: {}", sim.near_pressure_multiplier);
+        println!("collision_damping: {}", sim.collision_damping);
 
-        simulation
+        sim
     }
 
     pub fn spawn_particles(
-        &self,
+        &mut self,
         commands: &mut Commands,
         meshes: &mut ResMut<Assets<Mesh>>,
         materials: &mut ResMut<Assets<ColorMaterial>>,
     ) {
         let color = Color::linear_rgb(0.0, 0.3, 1.0);
 
-        for id in 0..self.num_particles {
-            let mut particle = Particle {
-                id,
-                ..default()
-            };
+        self.place_particles();
 
-            self.place_particle(&mut particle);
+        for i in 0..self.num_particles {
+            let particle = Particle { id: i };
 
             commands.spawn((
                 Mesh2d(meshes.add(Circle {
                     radius: self.particle_size / 2.0,
                 })),
                 MeshMaterial2d(materials.add(color)),
-                Transform::from_translation(particle.position.extend(0.0)),
+                Transform::from_translation(self.positions[i].extend(0.0)),
                 particle,
             ));
         }
     }
 
-    fn place_particle(&self, particle: &mut Particle) {
-        let x = -self.half_bounds_size.x + random::<f32>() * self.half_bounds_size.x * 2.0;
-        let y = -self.half_bounds_size.y + random::<f32>() * self.half_bounds_size.y * 2.0;
-        let velocity = Vec2::new(random::<f32>() - 0.5, random::<f32>() - 0.5) * self.particle_size;
-        // let velocity = Vec2::ZERO;
-        particle.position = Vec2::new(x, y);
-        particle.velocity = velocity;
+    fn place_particles(&mut self) {
+        for i in 0..self.num_particles {
+            let x = -self.half_bounds_size.x + random::<f32>() * self.half_bounds_size.x * 2.0;
+            let y = -self.half_bounds_size.y + random::<f32>() * self.half_bounds_size.y * 2.0;
+            let velocity = Vec2::new(random::<f32>() - 0.5, random::<f32>() - 0.5) * self.particle_size;
+            self.positions[i] = Vec2::new(x, y);
+            self.velocities[i] = velocity;
+        }
+    }
+    
+    pub fn calculate_densities(&mut self) {
+        for i in 0..self.num_particles {
+            self.densities[i] = self.density(i);
+        }
+
+        if self.debug.log_frame == self.debug.current_frame {
+            // Log the density
+            let highest_density = self.densities.clone().into_iter()
+                .reduce(f32::max).unwrap();
+            let average_density = self.densities.iter().sum::<f32>() / self.num_particles as f32;
+            self.debug(format!("highest density: {highest_density}"));
+            self.debug(format!("average density: {average_density}"));
+        }
     }
 
-    pub fn density(&self, pt: &Particle, particle_positions: &Vec<Vec2>) -> f32 {
+    fn density(&self, id: usize) -> f32 {
+        let position = self.positions[id];
         let mut density = 0.0;
 
-        for (i, particle_position) in particle_positions.iter().enumerate() {
-            if i == pt.id {
+        for (i, other_position) in self.positions.iter().enumerate() {
+            if i == id {
                 continue;
             }
-            let distance = (particle_position - pt.position).length().max(0.000000001);
+            let distance = (other_position - position).length().max(0.000000001);
             let influence = self.smoothing_kernel(distance);
             density += influence;
         }
         density
     }
+    
+    pub fn calculate_pressures(&mut self, delta: f32) {
+        self.velocities = (0..self.num_particles)
+            .map(|i| self.calculate_pressure(i, delta))
+            .collect();
+    }
 
-    pub fn calculate_pressure(&self, particle: &mut Mut<Particle>, particles: &Vec<Particle>, delta: f32) {
-        let pressure_force = self.pressure_force(&particle, &particles);
+    fn calculate_pressure(&self, id: usize, delta: f32) -> Vec2 {
+        let mut velocity = self.velocities[id];
+        let pressure_force = self.pressure_force(id);
         if self.debug.use_gravity {
-            particle.velocity += (self.gravity + pressure_force) * delta;
+            velocity += (self.gravity + pressure_force) * delta;
         } else {
-            particle.velocity = pressure_force * delta;
+            velocity = pressure_force * delta;
         }
         // Poor man's viscosity:
-        particle.velocity = particle.velocity.clamp_length_max(50.0 * self.particle_size * delta);
+        velocity = velocity.clamp_length_max(50.0 * self.particle_size * delta);
+        
+        velocity
     }
 
-    pub fn apply_velocity(&self, particle: &mut Mut<Particle>) {
-        particle.position = particle.position + particle.velocity;
-        self.resolve_collisions(particle);
+    pub fn apply_velocity(&mut self, id: usize) {
+        self.positions[id] = self.positions[id] + self.velocities[id];
+        self.resolve_collisions(id);
     }
 
-    pub fn reset(&mut self,
-                 mut particle_query: Query<&mut Particle>,
-    ) {
-        particle_query.par_iter_mut().for_each(|mut particle| {
-            self.place_particle(&mut particle);
-        })
+    pub fn reset(&mut self) {
+        self.place_particles();
     }
 
     pub fn on_resize(&mut self, window_width: f32, window_height: f32) {
@@ -162,6 +212,9 @@ impl Simulation {
 
     pub fn end_frame(&mut self) {
         self.debug.current_frame += 1;
+        if self.debug.frames_to_show > 0 {
+            self.debug.frames_to_show -= 1;
+        }
     }
 
     pub fn frames_to_advance(&self) -> u32 {
@@ -216,8 +269,6 @@ impl Simulation {
         if distance >= self.smoothing_radius {
             0f32
         } else {
-            // float v = radius - dst;
-            // return v * v * SpikyPow2ScalingFactor;
             (self.smoothing_radius - distance) * (self.smoothing_radius - distance) * self.smoothing_scaling_factor
         }
     }
@@ -226,8 +277,6 @@ impl Simulation {
         if distance >= self.smoothing_radius {
             0f32
         } else {
-            // float v = radius - dst;
-            // return -v * SpikyPow2DerivativeScalingFactor;
             (distance - self.smoothing_radius) * self.smoothing_derivative_scaling_factor
         }
     }
@@ -238,25 +287,27 @@ impl Simulation {
         (density_error1 + density_error2) * self.pressure_multiplier / 2.0
     }
 
-    fn resolve_collisions(&self, particle: &mut Mut<Particle>) {
-        if particle.position.x.abs() > self.half_bounds_size.x {
-            particle.position.x = self.half_bounds_size.x * particle.position.x.signum();
-            particle.velocity.x *= -1.0 * self.collision_damping;
+    fn resolve_collisions(&mut self, id: usize) {
+        if self.positions[id].x.abs() > self.half_bounds_size.x {
+            self.positions[id].x = self.half_bounds_size.x * self.positions[id].x.signum();
+            self.velocities[id].x *= -1.0 * self.collision_damping;
         }
-        if particle.position.y.abs() > self.half_bounds_size.y {
-            particle.position.y = self.half_bounds_size.y * particle.position.y.signum();
-            particle.velocity.y *= -1.0 * self.collision_damping;
+        if self.positions[id].y.abs() > self.half_bounds_size.y {
+            self.positions[id].y = self.half_bounds_size.y * self.positions[id].y.signum();
+            self.velocities[id].y *= -1.0 * self.collision_damping;
         }
     }
 
-    fn pressure_force(&self, pt: &Particle, particles: &Vec<Particle>) -> Vec2 {
+    fn pressure_force(&self, id: usize) -> Vec2 {
         let mut gradient = Vec2::default();
+        let position = self.positions[id];
+        let density = self.densities[id];
 
-        for particle in particles {
-            if particle.id == pt.id {
+        for i in 0..self.num_particles {
+            if i == id {
                 continue;
             }
-            let offset = particle.position - pt.position;
+            let offset = self.positions[i] - position;
             let distance = offset.length().max(0.000000001);
             if distance >= self.smoothing_radius {
                 continue;
@@ -264,17 +315,13 @@ impl Simulation {
             // Unit vector in the direction of the particle.
             let direction = offset / distance;
             let slope = self.smoothing_kernel_derivative(distance);
-            let pressure = self.shared_pressure(pt.density, particle.density);
-            // pressureForce += dirToNeighbour * DensityDerivative(dst, smoothingRadius) * sharedPressure / neighbourDensity;
-            gradient += direction * slope * pressure / particle.density;
+            let pressure = self.shared_pressure(density, self.densities[i]);
+            gradient += direction * slope * pressure / self.densities[i];
         }
         gradient // / pt.density
     }
 
     /// Divides a rectangular region into (roughly) n squares.
-    ///
-    /// Got it from ChatGPT, but as usual even this straightforward function had errors that
-    /// I had to fix...
     fn subdivide_into_squares(w: f32, h: f32, n: usize) -> (f32, usize, usize) {
         // Step 1: Calculate the target area of each square
         let target_area = (w * h) / n as f32;

@@ -4,7 +4,4 @@ use bevy::prelude::Component;
 #[derive(Component, Clone, Debug, Default)]
 pub struct Particle {
     pub id: usize,
-    pub position: Vec2,
-    pub velocity: Vec2,
-    pub density: f32,
 }
