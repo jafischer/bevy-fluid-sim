@@ -4,7 +4,6 @@ use bevy::prelude::*;
 use rand::random;
 
 use crate::Particle;
-use crate::spatial_hash::{get_cell_2d, hash_cell_2d, key_from_hash, OFFSETS_2D};
 
 #[derive(Component)]
 pub struct Simulation {
@@ -49,14 +48,16 @@ pub struct DebugParams {
     pub frames_to_show: u32,
     pub log_frame: u32,
     pub show_arrows: bool,
-    pub show_circles: bool,
+    pub show_smoothing_radius: bool,
     pub inc_velocity: bool,
 }
 
 impl Simulation {
     pub fn new(window_width: f32, window_height: f32) -> Simulation {
-        let fluid_h = window_height * 0.67;
-        let num_particles = 2000;
+        let fluid_h = window_height * 0.50;
+        let num_particles = 2500;
+        // Originally I placed the particles initially in a grid. I no longer do, but the grid_size
+        // is useful, so I kept this call:
         let (grid_size, _, _) = Self::subdivide_into_squares(window_width, fluid_h, num_particles);
 
         // Because Sebastian's kernel math blows up with smoothing radius values > 1, we don't want to use the
@@ -65,10 +66,10 @@ impl Simulation {
         // (https://youtu.be/rSKMYc1CQHE?si=3sibErk0e4CYC5wF&t=340)
         // So we'll just scale down the grid size to 0.08333 (1/12).
         // grid_size * scale = 0.08333
-        // scale = 0.08333 / grid_size
+        // --> scale = 0.08333 / grid_size, see, I can still do grade school math.
         let scale = 0.08333 / grid_size;
         let grid_size = grid_size * scale;
-        let particle_size = grid_size * 0.5;
+        let particle_size = grid_size * 0.67;
         let smoothing_radius = 0.25;
 
         let mut positions: Vec<Vec2> = Vec::with_capacity(num_particles);
@@ -93,8 +94,8 @@ impl Simulation {
             particle_size,
             scale,
             half_bounds_size: Vec2::new(window_width, window_height) * scale / 2.0 - particle_size / 2.0,
-            gravity: Vec2::new(0.0, -1.0 * scale),
-            target_density: 250.0, // TODO: calculate target_density based on window size & num_particles.
+            gravity: Vec2::new(0.0, -10.0 * scale),
+            target_density: 1.0 / scale,
             pressure_multiplier: 500.0,
             near_pressure_multiplier: 50.0,
             collision_damping: 0.25,
@@ -109,7 +110,7 @@ impl Simulation {
                 frames_to_show: u32::MAX,
                 log_frame: 0,
                 show_arrows: false,
-                show_circles: false,
+                show_smoothing_radius: false,
                 inc_velocity: true,
             },
         };
@@ -266,7 +267,7 @@ impl Simulation {
     }
 
     pub fn toggle_circles(&mut self) {
-        self.debug.show_circles = !self.debug.show_circles;
+        self.debug.show_smoothing_radius = !self.debug.show_smoothing_radius;
     }
 
     pub fn toggle_inc_velocity(&mut self) {
@@ -334,13 +335,14 @@ impl Simulation {
                 continue;
             }
             let offset = self.positions[i] - position;
-            let distance = offset.length().max(0.00001);
+            let distance = offset.length();// nocommit .max(0.00001);
             if distance >= self.smoothing_radius {
                 continue;
             }
-            // if distance == 0.0 {
-            //     gradient += Vec2::new(random::<f32>() - 0.5, random::<f32>() - 0.5) * self.particle_size
-            // }
+            if distance == 0.0 {
+                gradient += Vec2::new(random::<f32>() - 0.5, random::<f32>() - 0.5) * self.particle_size;
+                continue;
+            }
 
             // Unit vector in the direction of the particle.
             let direction = offset / distance;
