@@ -2,13 +2,15 @@ mod digit_keys;
 mod particle;
 mod sim;
 mod spatial_hash;
+mod args;
 
 use bevy::color::palettes::basic::*;
 use bevy::color::palettes::css::GOLD;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::prelude::*;
-use bevy::window::WindowResized;
-
+use bevy::window::{PresentMode, WindowResized, WindowResolution};
+use clap::Parser;
+use crate::args::ARGS;
 use crate::digit_keys::{key_number, DIGIT_KEYS};
 use crate::particle::Particle;
 use crate::sim::Simulation;
@@ -16,12 +18,35 @@ use crate::sim::Simulation;
 #[derive(Component)]
 struct FpsText;
 
-fn main() {
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let win_size: Vec<_> = ARGS.win.split(',').collect();
+    if win_size.len() != 2 {
+        return Err("Incorrect window size".into());
+    }
+    let width: u16 = win_size[0].parse()?;
+    let height: u16 = win_size[1].parse()?;
+    
     App::new()
-        .add_plugins((DefaultPlugins, FrameTimeDiagnosticsPlugin))
+        .add_plugins((
+            DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    present_mode: PresentMode::AutoNoVsync,
+                    resolution: WindowResolution::new(width as f32, height as f32),
+                    ..default()
+                }),
+                ..default()
+            }),
+            FrameTimeDiagnosticsPlugin,
+        ))
         .add_systems(Startup, setup)
-        .add_systems(Update, (update_particles, draw_debug_info, handle_keypress, handle_mouse_clicks, on_resize, update_fps))
+        .add_systems(
+            Update,
+            (update_particles, draw_debug_info, handle_keypress, handle_mouse_clicks, on_resize, update_fps),
+        )
         .run();
+    
+    Ok(())
 }
 
 fn setup(
@@ -65,15 +90,11 @@ fn update_particles(
     time: Res<Time>,
     mut sim: Single<&mut Simulation>,
 ) {
-    sim.calculate_densities();
-    sim.calculate_pressures(time.delta_secs());
     let cold = Vec3::new(0.0, 0.5, 1.0);
     let hot = Vec3::new(1.0, 0.2, 0.1);
     let diff = hot - cold;
 
-    if sim.frames_to_advance() > 0 {
-        sim.apply_velocities();
-    }
+    sim.update_particles(time.delta_secs());
 
     particle_query.iter_mut().for_each(|(entity, mut transform, particle)| {
         transform.translation.x = sim.positions[particle.id].x;
@@ -87,11 +108,10 @@ fn update_particles(
             let color = cold + density_scale.clamp(0.0, 2.0) / 2.0 * diff;
             // if sim.densities[particle.id].0 < 2.0 {
             //     // use gizmo to draw a circle here
-            // } 
-                commands
-                    .entity(entity)
-                    .insert(MeshMaterial2d(materials.add(Color::linear_rgb(color.x, color.y, color.z))));
-            
+            // }
+            commands
+                .entity(entity)
+                .insert(MeshMaterial2d(materials.add(Color::linear_rgb(color.x, color.y, color.z))));
         }
     });
 
@@ -163,6 +183,10 @@ fn handle_keypress(
             sim.adj_gravity(0.5);
         }
     }
+    // I: toggle inertia (see sim.calculate_pressure()).
+    if kb.just_pressed(KeyCode::KeyI) {
+        sim.toggle_inertia();
+    }
     // L: log debug info in the next frame
     if kb.just_pressed(KeyCode::KeyL) {
         sim.log_next_frame();
@@ -179,15 +203,13 @@ fn handle_keypress(
             sim.adj_smoothing_radius(-0.01);
         }
     }
-    // V: toggle whether velocity is incremented or just assigned (see sim.calculate_pressure()). 
-    if kb.just_pressed(KeyCode::KeyV) {
-        sim.toggle_inc_velocity();
-    }
     // W: "watch" the particle(s) under the cursor (color them yellow).
     // Shift-W: clear all watched particles.
     if kb.just_pressed(KeyCode::KeyW) {
         if kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight) {
-            particle_query.par_iter_mut().for_each(|(_, mut particle)| particle.watched = false);
+            particle_query
+                .par_iter_mut()
+                .for_each(|(_, mut particle)| particle.watched = false);
         } else {
             let Some(cursor_position) = window.cursor_position() else {
                 return;
@@ -201,7 +223,10 @@ fn handle_keypress(
 
             particle_query.par_iter_mut().for_each(|(transform, mut particle)| {
                 if (transform.translation.xy() - point).length() <= sim.particle_size / 2.0 {
-                    println!("Watching particle {} @({},{}) density={}", particle.id, transform.translation.x, transform.translation.y, sim.densities[particle.id].0);
+                    println!(
+                        "Watching particle {} @({},{}) density={}",
+                        particle.id, transform.translation.x, transform.translation.y, sim.densities[particle.id].0
+                    );
                     particle.watched = true;
                 }
             });
@@ -217,11 +242,14 @@ fn handle_keypress(
 fn handle_mouse_clicks(
     buttons: Res<ButtonInput<MouseButton>>,
     camera_query: Single<(&Camera, &GlobalTransform)>,
-    mut particle_query: Query<(&mut Transform, &mut Particle)>,
-    sim: Single<&Simulation>,
+    mut sim: Single<&mut Simulation>,
     window: Single<&Window>,
 ) {
-    if !buttons.just_pressed(MouseButton::Left) {
+    sim.interaction_input_strength = 0.0;
+
+    let left_click = buttons.pressed(MouseButton::Left);
+    let right_click = buttons.pressed(MouseButton::Right);
+    if !left_click && !right_click {
         return;
     }
     let Some(cursor_position) = window.cursor_position() else {
@@ -234,6 +262,8 @@ fn handle_mouse_clicks(
         return;
     };
 
+    sim.interaction_input_strength = if left_click { -300.0 } else { 300.0 };
+    sim.interaction_input_point = point;
 }
 
 /// This system shows how to respond to a window being resized.
