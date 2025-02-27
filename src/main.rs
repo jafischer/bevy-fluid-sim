@@ -1,6 +1,7 @@
 mod digit_keys;
 mod particle;
 mod sim;
+mod spatial_hash;
 
 use bevy::color::palettes::basic::*;
 use bevy::color::palettes::css::GOLD;
@@ -66,7 +67,7 @@ fn update_particles(
 ) {
     sim.calculate_densities();
     sim.calculate_pressures(time.delta_secs());
-    let cold = Vec3::new(0.0, 0.2, 1.0);
+    let cold = Vec3::new(0.0, 0.5, 1.0);
     let hot = Vec3::new(1.0, 0.2, 0.1);
     let diff = hot - cold;
 
@@ -82,17 +83,15 @@ fn update_particles(
                 .entity(entity)
                 .insert(MeshMaterial2d(materials.add(Color::linear_rgb(1.0, 1.0, 0.0))));
         } else {
-            let density_scale = sim.densities[particle.id] / sim.target_density;
-            let color = cold + density_scale.clamp(0.0, 1.0) * diff;
-            if sim.densities[particle.id] < 2.0 {
-                commands
-                    .entity(entity)
-                    .insert(MeshMaterial2d(materials.add(Color::linear_rgb(1.0, 1.0, 1.0))));
-            } else {
+            let density_scale = (sim.densities[particle.id].0 - sim.target_density) / sim.target_density;
+            let color = cold + density_scale.clamp(0.0, 2.0) / 2.0 * diff;
+            // if sim.densities[particle.id].0 < 2.0 {
+            //     // use gizmo to draw a circle here
+            // } 
                 commands
                     .entity(entity)
                     .insert(MeshMaterial2d(materials.add(Color::linear_rgb(color.x, color.y, color.z))));
-            }
+            
         }
     });
 
@@ -202,7 +201,7 @@ fn handle_keypress(
 
             particle_query.par_iter_mut().for_each(|(transform, mut particle)| {
                 if (transform.translation.xy() - point).length() <= sim.particle_size / 2.0 {
-                    println!("Watching particle {} @{:?}", particle.id, transform.translation.xy());
+                    println!("Watching particle {} @({},{}) density={}", particle.id, transform.translation.x, transform.translation.y, sim.densities[particle.id].0);
                     particle.watched = true;
                 }
             });

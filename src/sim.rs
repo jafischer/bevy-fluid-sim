@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use rand::random;
 
 use crate::Particle;
+use crate::spatial_hash::{get_cell_2d, hash_cell_2d, key_from_hash, OFFSETS_2D};
 
 #[derive(Component)]
 pub struct Simulation {
@@ -29,7 +30,7 @@ pub struct Simulation {
     pub positions: Vec<Vec2>,
     pub predicted_positions: Vec<Vec2>,
     pub velocities: Vec<Vec2>,
-    pub densities: Vec<f32>,
+    pub densities: Vec<(f32,f32)>,
     pub spatial_offsets: Vec<u32>,
     pub spatial_indices: Vec<[u32; 3]>,
 
@@ -86,24 +87,23 @@ impl Simulation {
         let particle_size = grid_size * 0.67;
         let smoothing_radius = 0.25;
 
-        let mut positions: Vec<Vec2> = Vec::with_capacity(num_particles);
+        let mut positions = Vec::with_capacity(num_particles);
         positions.resize_with(num_particles, Default::default);
-        let mut velocities: Vec<Vec2> = Vec::with_capacity(num_particles);
+        let mut velocities = Vec::with_capacity(num_particles);
         velocities.resize_with(num_particles, Default::default);
-        let mut densities: Vec<f32> = Vec::with_capacity(num_particles);
+        let mut densities = Vec::with_capacity(num_particles);
         densities.resize_with(num_particles, Default::default);
-        let mut spatial_offsets: Vec<u32> = Vec::with_capacity(num_particles);
+        let mut spatial_offsets = Vec::with_capacity(num_particles);
         spatial_offsets.resize_with(num_particles, Default::default);
-        let mut spatial_indices: Vec<[u32; 3]> = Vec::with_capacity(num_particles);
+        let mut spatial_indices = Vec::with_capacity(num_particles);
         spatial_indices.resize_with(num_particles, Default::default);
-        let mut predicted_positions: Vec<Vec2> = Vec::with_capacity(num_particles);
+        let mut predicted_positions = Vec::with_capacity(num_particles);
         predicted_positions.resize_with(num_particles, Default::default);
 
         let sim = Simulation {
             smoothing_radius,
             smoothing_scaling_factor: 6.0 / (PI * smoothing_radius.powf(4.0)),
             smoothing_derivative_scaling_factor: PI * smoothing_radius.powf(4.0) / 6.0,
-            // smoothing_derivative_scaling_factor: 12.0 / (smoothing_radius.powf(4.0) * PI),
             num_particles,
             particle_size,
             scale,
@@ -188,28 +188,22 @@ impl Simulation {
         }
 
         if self.debug.log_frame == self.debug.current_frame {
-            // Once densities becomes Vec<(f32, f32)>:
-            // let lowest_density = self.densities.iter()
-            //     .map(|(density, near_density)| *density)
-            //     .reduce(f32::min).unwrap();
-            // let highest_density = self.densities.clone().iter()
-            //     .map(|(density, near_density)| *density)
-            //     .reduce(f32::max).unwrap();
-            // let average_density = self.densities.iter()
-            //     .map(|(density, near_density)| *density)
-            //     .sum::<f32>() / self.num_particles as f32;
-            let lowest_density = self.densities.clone().into_iter()
+            let lowest_density = self.densities.iter()
+                .map(|(density, _)| *density)
                 .reduce(f32::min).unwrap();
-            let highest_density = self.densities.clone().into_iter()
+            let highest_density = self.densities.clone().iter()
+                .map(|(density, _)| *density)
                 .reduce(f32::max).unwrap();
-            let average_density = self.densities.iter().sum::<f32>() / self.num_particles as f32;
+            let average_density = self.densities.iter()
+                .map(|(density, _)| *density)
+                .sum::<f32>() / self.num_particles as f32;
             self.debug(format!("lowest density: {lowest_density}"));
             self.debug(format!("highest density: {highest_density}"));
             self.debug(format!("average density: {average_density}"));
         }
     }
 
-    fn density(&self, id: usize) -> f32 {
+    fn density(&self, id: usize) -> (f32, f32) {
         let position = self.positions[id];
         let mut density = 1.0;
 
@@ -221,7 +215,7 @@ impl Simulation {
             let influence = self.smoothing_kernel(distance);
             density += influence;
         }
-        density
+        (density, density) // todo
     }
     
     pub fn calculate_pressures(&mut self, delta: f32) {
@@ -309,7 +303,6 @@ impl Simulation {
         self.smoothing_radius = (self.smoothing_radius  + increment).max(increment.abs());
         self.smoothing_scaling_factor = 6.0 / (PI * self.smoothing_radius.powf(4.0));
         self.smoothing_derivative_scaling_factor = PI * self.smoothing_radius.powf(4.0) / 6.0;
-        // self.smoothing_derivative_scaling_factor = 12.0 / (self.smoothing_radius.powf(4.0) * PI);
         println!("smoothing_radius: {}", self.smoothing_radius);
     }
 
@@ -354,14 +347,14 @@ impl Simulation {
     fn pressure_force(&self, id: usize) -> Vec2 {
         let mut gradient = Vec2::default();
         let position = self.positions[id];
-        let density = self.densities[id];
+        let density = self.densities[id].0;
 
         for i in 0..self.num_particles {
             if i == id {
                 continue;
             }
             let offset = self.positions[i] - position;
-            let distance = offset.length();// nocommit .max(0.00001);
+            let distance = offset.length();
             if distance >= self.smoothing_radius {
                 continue;
             }
@@ -373,10 +366,10 @@ impl Simulation {
             // Unit vector in the direction of the particle.
             let direction = offset / distance;
             let slope = self.smoothing_kernel_derivative(distance);
-            let pressure = self.shared_pressure(density, self.densities[i]);
-            gradient += direction * slope * pressure / self.densities[i];
+            let pressure = self.shared_pressure(density, self.densities[i].0);
+            gradient += direction * slope * pressure / self.densities[i].0;
         }
-        gradient// / density
+        gradient
     }
 
     /// Divides a rectangular region into (roughly) n squares.
