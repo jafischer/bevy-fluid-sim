@@ -20,11 +20,25 @@ pub struct Simulation {
     pub near_pressure_multiplier: f32,
     pub collision_damping: f32,
 
+    //
+    pub interaction_input_strength: f32,
+    pub interaction_input_radius: f32,
+    pub interaction_input_point: Vec2,
+
     // Particle information:
     pub positions: Vec<Vec2>,
     pub predicted_positions: Vec<Vec2>,
     pub velocities: Vec<Vec2>,
     pub densities: Vec<f32>,
+    pub spatial_offsets: Vec<u32>,
+    pub spatial_indices: Vec<[u32; 3]>,
+
+    // From Fluid-Sim
+    pub poly6_scaling_factor: f32,
+    pub spiky_pow3_scaling_factor: f32,
+    pub spiky_pow2_scaling_factor: f32,
+    pub spiky_pow3_derivative_scaling_factor: f32,
+    pub spiky_pow2_derivative_scaling_factor: f32,
 
     pub debug: DebugParams,
 }
@@ -100,10 +114,22 @@ impl Simulation {
             near_pressure_multiplier: 50.0,
             collision_damping: 0.25,
 
+            interaction_input_strength: 0.0,
+            interaction_input_radius: 2.0,
+            interaction_input_point: Vec2::ZERO,
+
             positions,
             predicted_positions,
             velocities,
             densities,
+            spatial_offsets,
+            spatial_indices,
+
+            poly6_scaling_factor: 4.0 / (PI * smoothing_radius.powf(8.0)),
+            spiky_pow3_scaling_factor: 10.0 / (PI * smoothing_radius.powf(5.0)),
+            spiky_pow2_scaling_factor: 6.0 / (PI * smoothing_radius.powf(4.0)),
+            spiky_pow3_derivative_scaling_factor: 30.0 / (smoothing_radius.powf(5.0) * PI),
+            spiky_pow2_derivative_scaling_factor: 12.0 / (smoothing_radius.powf(4.0) * PI),
 
             debug: DebugParams {
                 current_frame: 0,
@@ -115,7 +141,7 @@ impl Simulation {
             },
         };
 
-        println!("sim: {sim:?}");
+        println!("{sim:?}");
 
         sim
     }
@@ -241,7 +267,7 @@ impl Simulation {
     }
 
     pub fn end_frame(&mut self) {
-        self.debug(format!("sim: {self:?}"));
+        self.debug(format!("{self:?}"));
         self.debug.current_frame += 1;
         if self.debug.frames_to_show > 0 {
             self.debug.frames_to_show -= 1;
@@ -369,5 +395,141 @@ impl Simulation {
         let side_length = f32::min(w / columns, h / rows);
 
         (side_length, columns as usize, rows as usize)
+    }
+
+    fn smoothing_kernel_poly6(&self, dst: f32) -> f32 {
+        if dst < self.smoothing_radius {
+            let v: f32 = self.smoothing_radius * self.smoothing_radius - dst * dst;
+            return v * v * v * self.poly6_scaling_factor;
+        }
+        0.0
+    }
+
+    fn spiky_kernel_pow3(&self, dst: f32) -> f32 {
+        if dst < self.smoothing_radius {
+            let v: f32 = self.smoothing_radius - dst;
+            return v * v * v * self.spiky_pow3_scaling_factor;
+        }
+        0.0
+    }
+
+    fn spiky_kernel_pow2(&self, dst: f32) -> f32 {
+        if dst < self.smoothing_radius {
+            let v: f32 = self.smoothing_radius - dst;
+            return v * v * self.spiky_pow2_scaling_factor;
+        }
+        0.0
+    }
+
+    fn derivative_spiky_pow3(&self, dst: f32) -> f32 {
+        if dst < self.smoothing_radius {
+            let v: f32 = self.smoothing_radius - dst;
+            return -v * v * self.spiky_pow3_derivative_scaling_factor;
+        }
+        0.0
+    }
+
+    fn derivative_spiky_pow2(&self, dst: f32) -> f32 {
+        if dst < self.smoothing_radius {
+            let v: f32 = self.smoothing_radius - dst;
+            return -v * self.spiky_pow2_derivative_scaling_factor;
+        }
+        0.0
+    }
+
+    fn density_kernel(&self, dst: f32) -> f32 {
+        self.spiky_kernel_pow2(dst)
+    }
+    
+    fn near_density_kernel(&self, dst: f32) -> f32 {
+        self.spiky_kernel_pow3(dst)
+    }
+    
+    fn density_derivative(&self, dst: f32) -> f32 {
+        self.derivative_spiky_pow2(dst)
+    }
+    
+    fn near_density_derivative(&self, dst: f32) -> f32 {
+        self.derivative_spiky_pow3(dst)
+    }
+    
+    fn viscosity_kernel(&self, dst: f32) -> f32 {
+        self.smoothing_kernel_poly6(dst)
+    }
+
+    fn calculate_density(&self, pos: &Vec2) -> (f32, f32) {
+        let origin_cell = get_cell_2d(pos, self.smoothing_radius);
+        let sqr_radius = self.smoothing_radius * self.smoothing_radius;
+        let mut density = 0.0;
+        let mut near_density = 0.0;
+
+        // Neighbour search
+        for offset in OFFSETS_2D {
+            let cell = (origin_cell.0 + offset.0, origin_cell.1 + offset.1);
+            let hash = hash_cell_2d(&cell);
+            let key = key_from_hash(hash, self.num_particles as u32);
+            let mut curr_index = self.spatial_offsets[key as usize];
+
+            while (curr_index as usize) < self.num_particles
+            {
+                let index_data = self.spatial_indices[curr_index as usize];
+                curr_index += 1;
+                // Exit if no longer looking at correct bin
+                if index_data[2] != key {
+                    break;
+                }
+                // Skip if hash does not match
+                if index_data[1] != hash {
+                    continue;
+                }
+
+                let neighbour_index = index_data[0];
+                let neighbour_pos = self.predicted_positions[neighbour_index as usize];
+                let offset_to_neighbour = neighbour_pos - pos;
+                let sqr_dst_to_neighbour = offset_to_neighbour.dot(offset_to_neighbour);
+
+                // Skip if not within radius
+                if sqr_dst_to_neighbour > sqr_radius {
+                    continue;
+                }
+
+                // Calculate density and near density
+                let dst = sqr_dst_to_neighbour.sqrt();
+                density += self.density_kernel(dst);
+                near_density += self.near_density_kernel(dst);
+            }
+        }
+
+        (density, near_density)
+    }
+
+    fn pressure_from_density(&self, density: f32) -> f32 {
+        (density - self.target_density) * self.pressure_multiplier
+    }
+
+    fn near_pressure_from_density(&self, near_density: f32) -> f32 {
+        self.near_pressure_multiplier * near_density
+    }
+
+    fn external_forces(&self, pos: &Vec2, velocity: &Vec2) -> Vec2 {
+        // Input interactions modify gravity
+        if self.interaction_input_strength != 0.0 {
+            let input_point_offset = self.interaction_input_point - pos;
+            let sqr_dst = input_point_offset.dot(input_point_offset);
+            if sqr_dst < self.interaction_input_radius * self.interaction_input_radius
+            {
+                let dst = sqr_dst.sqrt();
+                let edge_t = dst / self.interaction_input_radius;
+                let centre_t = 1.0 - edge_t;
+                let dir_to_centre = input_point_offset / dst;
+
+                let gravity_weight = 1.0 - (centre_t * (self.interaction_input_strength / 10.0).clamp(0.0, 1.0));
+                let mut accel = self.gravity * gravity_weight + dir_to_centre * centre_t * self.interaction_input_strength;
+                accel -= velocity * centre_t;
+                return accel;
+            }
+        }
+
+       self.gravity
     }
 }
