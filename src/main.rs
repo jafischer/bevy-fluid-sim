@@ -3,9 +3,9 @@ mod particle;
 mod sim;
 mod spatial_hash;
 
-use std::time::Instant;
-
-use bevy::color::palettes::basic::YELLOW;
+use bevy::color::palettes::basic::*;
+use bevy::color::palettes::css::GOLD;
+use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::prelude::*;
 use bevy::window::WindowResized;
 
@@ -13,11 +13,14 @@ use crate::digit_keys::{key_number, DIGIT_KEYS};
 use crate::particle::Particle;
 use crate::sim::Simulation;
 
+#[derive(Component)]
+struct FpsText;
+
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins((DefaultPlugins, FrameTimeDiagnosticsPlugin))
         .add_systems(Startup, setup)
-        .add_systems(Update, (update, velocity_arrows, handle_keypress, on_resize))
+        .add_systems(Update, (update, draw_debug_info, handle_keypress, handle_mouse_clicks, on_resize, update_fps))
         .run();
 }
 
@@ -28,52 +31,101 @@ fn setup(
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     let mut sim = Simulation::new(window.width(), window.height());
+
     commands.spawn((Camera2d, Transform::from_scale(Vec3::splat(sim.scale))));
     sim.spawn_particles(&mut commands, &mut meshes, &mut materials);
     commands.spawn(sim);
+
+    commands
+        .spawn((
+            // Create a Text with multiple child spans.
+            Text::new("FPS: "),
+            TextFont {
+                font_size: 14.0,
+                ..default()
+            },
+        ))
+        .with_child((
+            TextSpan::default(),
+            (
+                TextFont {
+                    font_size: 14.0,
+                    ..default()
+                },
+                TextColor(GOLD.into()),
+            ),
+            FpsText,
+        ));
 }
 
 fn update(
-    mut particle_query: Query<(&mut Transform, &mut Particle)>,
+    mut commands: Commands,
+    mut particle_query: Query<(Entity, &mut Transform, &mut Particle)>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
     time: Res<Time>,
     mut sim: Single<&mut Simulation>,
 ) {
-    let start_time = Instant::now();
-
     sim.calculate_densities();
     sim.calculate_pressures(time.delta_secs());
+    let cold = Vec3::new(0.0, 0.2, 1.0);
+    let hot = Vec3::new(1.0, 0.2, 0.1);
+    let diff = hot - cold;
 
-    particle_query.iter_mut().for_each(|(mut transform, particle)| {
-        if sim.frames_to_advance() > 0 {
-            sim.apply_velocity(particle.id);
-        }
+    if sim.frames_to_advance() > 0 {
+        sim.apply_velocities();
+    }
+
+    particle_query.iter_mut().for_each(|(entity, mut transform, particle)| {
         transform.translation.x = sim.positions[particle.id].x;
         transform.translation.y = sim.positions[particle.id].y;
+        if particle.watched {
+            commands
+                .entity(entity)
+                .insert(MeshMaterial2d(materials.add(Color::linear_rgb(1.0, 1.0, 0.0))));
+        } else {
+            let density_scale = sim.densities[particle.id] / sim.target_density;
+            let color = cold + density_scale.clamp(0.0, 1.0) * diff;
+            if sim.densities[particle.id] < 2.0 {
+                commands
+                    .entity(entity)
+                    .insert(MeshMaterial2d(materials.add(Color::linear_rgb(1.0, 1.0, 1.0))));
+            } else {
+                commands
+                    .entity(entity)
+                    .insert(MeshMaterial2d(materials.add(Color::linear_rgb(color.x, color.y, color.z))));
+            }
+        }
     });
-
-    // Dev build, 500 particles:
-    //   par_iter_mut: avg 0.00226 sec
-    //   iter_mut:     avg 0.00765 sec
-    //   So, 3.38 times slower.
-    // Release build, 500 particles:
-    //   par_iter_mut: avg 0.000281 sec
-    //   iter_mut:     avg 0.000822 sec
-    //   2.926 times slower.
-    // 5000 particles:
-    //   release: 0.015326, dev: 0.10116934342857142 --> 6.6 times slower!
-    sim.debug(format!("elapsed: {}", Instant::now().duration_since(start_time).as_secs_f32()));
 
     sim.end_frame();
 }
 
-fn velocity_arrows(mut gizmos: Gizmos, particle_query: Query<(&Transform, &Particle)>, sim: Single<&Simulation>) {
-    if sim.show_arrows() {
+fn update_fps(diagnostics: Res<DiagnosticsStore>, mut query: Query<&mut TextSpan, With<FpsText>>) {
+    for mut span in &mut query {
+        if let Some(fps) = diagnostics.get(&FrameTimeDiagnosticsPlugin::FPS) {
+            if let Some(value) = fps.smoothed() {
+                // Update the value of the second section
+                **span = format!("{value:.1}");
+            }
+        }
+    }
+}
+
+fn draw_debug_info(mut gizmos: Gizmos, particle_query: Query<(&Transform, &Particle)>, sim: Single<&Simulation>) {
+    if sim.debug.show_arrows {
         particle_query.iter().for_each(|(transform, particle)| {
-            let arrow_end = transform.translation.xy() + sim.velocities[particle.id] * 10.0;
+            let arrow_end = transform.translation.xy() + sim.velocities[particle.id];
             gizmos
                 .arrow(transform.translation.xy().extend(0.0), arrow_end.extend(0.0), YELLOW)
-                .with_tip_length(0.001);
+                .with_tip_length(0.01);
         });
+    }
+    if sim.debug.show_circles {
+        for (i, (transform, _)) in particle_query.iter().enumerate() {
+            if (i % 100) == 0 {
+                gizmos.circle_2d(transform.translation.xy(), sim.smoothing_radius, LIME);
+            }
+        }
     }
 }
 
@@ -98,8 +150,18 @@ fn handle_keypress(
     if kb.just_pressed(KeyCode::KeyA) {
         sim.toggle_arrows();
     }
+    if kb.just_pressed(KeyCode::KeyC) {
+        sim.toggle_circles();
+    }
     if kb.just_pressed(KeyCode::KeyG) {
-        sim.toggle_gravity();
+        if kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight) {
+            sim.adj_gravity(-0.5);
+        } else {
+            sim.adj_gravity(0.5);
+        }
+    }
+    if kb.just_pressed(KeyCode::KeyV) {
+        sim.toggle_inc_velocity();
     }
     if kb.just_pressed(KeyCode::KeyL) {
         sim.log_next_frame();
@@ -109,14 +171,45 @@ fn handle_keypress(
     }
     if kb.just_pressed(KeyCode::KeyS) {
         if kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight) {
-            sim.inc_smoothing_radius();
+            sim.adj_smoothing_radius(0.01);
         } else {
-            sim.dec_smoothing_radius();
+            sim.adj_smoothing_radius(-0.01);
         }
     }
     if kb.just_pressed(KeyCode::Escape) {
         app_exit.send(AppExit::Success);
     }
+}
+
+// Handles clicks on the plane that reposition the object.
+fn handle_mouse_clicks(
+    buttons: Res<ButtonInput<MouseButton>>,
+    // windows: Query<&Window, With<PrimaryWindow>>,
+    window: Single<&Window>,
+    // cameras: Query<(&Camera, &GlobalTransform)>,
+    camera_query: Single<(&Camera, &GlobalTransform)>,
+    mut particle_query: Query<(&mut Transform, &mut Particle)>,
+    sim: Single<&Simulation>,
+) {
+    if !buttons.just_pressed(MouseButton::Left) {
+        return;
+    }
+    let Some(cursor_position) = window.cursor_position() else {
+        return;
+    };
+    let (camera, camera_transform) = *camera_query;
+
+    // Calculate a world position based on the cursor's position.
+    let Ok(point) = camera.viewport_to_world_2d(camera_transform, cursor_position) else {
+        return;
+    };
+
+    particle_query.par_iter_mut().for_each(|(transform, mut particle)| {
+        if (transform.translation.xy() - point).length() <= sim.particle_size / 2.0 {
+            println!("Watching particle {} @{:?}", particle.id, transform.translation.xy());
+            particle.watched = true;
+        }
+    });
 }
 
 /// This system shows how to respond to a window being resized.

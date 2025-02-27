@@ -24,3 +24,4 @@ strip = "symbols"
 # PATH=C:\Users\jafischer\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\;C:\Users\jafischer\mysrc\sph\target\debug\deps\;C:\Users\jafischer\mysrc\sph\target\release\deps
 bevy = { version = "0.15", features = ["dynamic_linking", "multi_threaded"] }
 rand = "0"
+derivative = "2.2.0"
