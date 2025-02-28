@@ -106,12 +106,9 @@ fn update_particles(
             commands
                 .entity(entity)
                 .insert(MeshMaterial2d(materials.add(Color::linear_rgb(1.0, 1.0, 0.0))));
-        } else {
+        } else if sim.debug.use_heatmap {
             let density_scale = (sim.densities[particle.id].0 - sim.target_density) / sim.target_density;
             let color = COLD + density_scale.clamp(0.0, 2.0) / 2.0 * DIFF;
-            // if sim.densities[particle.id].0 < 2.0 {
-            //     // use gizmo to draw a circle here
-            // }
             commands
                 .entity(entity)
                 .insert(MeshMaterial2d(materials.add(Color::linear_rgb(color.x, color.y, color.z))));
@@ -135,15 +132,22 @@ fn update_fps(diagnostics: Res<DiagnosticsStore>, mut query: Query<&mut TextSpan
 fn draw_debug_info(mut gizmos: Gizmos, particle_query: Query<(&Transform, &Particle)>, sim: Single<&Simulation>) {
     if sim.debug.show_arrows {
         particle_query.iter().for_each(|(transform, particle)| {
-            let arrow_end = transform.translation.xy() + sim.velocities[particle.id] * 5.0;
+            let arrow_end = transform.translation.xy() + sim.velocities[particle.id] * 2.0;
             gizmos
                 .arrow(transform.translation.xy().extend(0.0), arrow_end.extend(0.0), YELLOW)
-                .with_tip_length(0.05);
+                .with_tip_length(sim.particle_size * 2.0);
         });
     }
     if sim.debug.show_smoothing_radius {
         let (transform, _) = particle_query.iter().next().unwrap();
         gizmos.circle_2d(transform.translation.xy(), sim.smoothing_radius, LIME);
+        let bottom = -sim.half_bounds_size.y;
+        let left = -sim.half_bounds_size.x;
+        for row in 0..sim.region_rows {
+            for col in 0..sim.region_cols {
+                gizmos.rect_2d(Vec2::new(left + col as f32 * sim.smoothing_radius, bottom + row as f32 * sim.smoothing_radius), Vec2::splat(sim.smoothing_radius), LIME);
+            }
+        }
     }
 }
 
@@ -193,7 +197,7 @@ impl KeyboardCommands {
             KeyCode::Digit1,
             KeyboardCommand {
                 last_action_time: Instant::now(),
-                interval: Duration::from_millis(100),
+                interval: Duration::from_millis(500),
                 action: |sim, _, _, _| {
                     sim.set_frames_to_show(1);
                 },
@@ -218,7 +222,7 @@ impl KeyboardCommands {
                 last_action_time: Instant::now(),
                 interval: Duration::from_millis(250),
                 action: |sim, _, _, _| {
-                    sim.toggle_circles();
+                    sim.toggle_smoothing_radius();
                 },
             },
         );
@@ -234,6 +238,17 @@ impl KeyboardCommands {
                     } else {
                         sim.adj_gravity(0.5);
                     }
+                },
+            },
+        );
+        // H: toggle heat map
+        kb_cmds.commands.insert(
+            KeyCode::KeyH,
+            KeyboardCommand {
+                last_action_time: Instant::now(),
+                interval: Duration::from_millis(250),
+                action: |sim, _, _, _| {
+                    sim.toggle_heatmap();
                 },
             },
         );
