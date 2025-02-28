@@ -111,7 +111,11 @@ fn update_particles(
             let color = COLD + density_scale.clamp(0.0, 2.0) / 2.0 * DIFF;
             commands
                 .entity(entity)
-                .insert(MeshMaterial2d(materials.add(Color::linear_rgb(color.x, color.y, color.z))));
+                .insert(Sprite {
+                    custom_size: Some(Vec2::splat(sim.particle_size)),
+                    color: Color::linear_rgb(color.x, color.y, color.z),
+                    ..Default::default()
+                });
         }
     });
 
@@ -160,7 +164,6 @@ struct KeyboardCommand {
         bool,
         // current mouse cursor position
         &Vec2,
-        // Particle query
         particle_query: &mut Query<(&mut Transform, &mut Particle)>,
     ),
 }

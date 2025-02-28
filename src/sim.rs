@@ -35,7 +35,7 @@ pub struct Simulation {
     pub region_rows: usize,
     pub region_cols: usize,
     pub regions: Vec<Vec<Vec<usize>>>,
-    
+
     // Fluid-Sim fields:
     pub predicted_positions: Vec<Vec2>,
     pub spatial_offsets: Vec<u32>,
@@ -129,7 +129,7 @@ impl Simulation {
             region_rows: 0,
             region_cols: 0,
             regions: vec![],
-            
+
             predicted_positions,
             spatial_offsets,
             spatial_indices,
@@ -147,7 +147,7 @@ impl Simulation {
                 show_smoothing_radius: false,
                 use_inertia: true,
                 use_viscosity: true,
-                use_heatmap: false,
+                use_heatmap: true,
             },
         };
 
@@ -170,11 +170,11 @@ impl Simulation {
             let particle = Particle { id: i, watched: false };
 
             commands.spawn((
-                Mesh2d(meshes.add(Circle {
-                    radius: self.particle_size / 2.0,
-                })),
-                MeshMaterial2d(materials.add(color)),
-                Transform::from_translation(self.positions[i].extend(0.0)),
+                Sprite {
+                    color,
+                    custom_size: Some(Vec2::splat(self.particle_size)),
+                    ..Default::default()
+                },
                 particle,
             ));
         }
@@ -219,7 +219,7 @@ impl Simulation {
         let cols = (width / self.smoothing_radius) as usize + 1;
         let rows = (height / self.smoothing_radius) as usize + 1;
         let num_regions = rows * cols;
-        
+
         // If window size or smoothing radius has changed, need to resize the regions vector.
         if self.region_rows != rows || self.region_cols != cols {
             self.region_rows = rows;
@@ -306,14 +306,14 @@ impl Simulation {
                         density += influence;
                     }
                 }
-            } 
+            }
         }
         (density, density)
     }
 
     pub fn calculate_pressures(&mut self, delta: f32) {
         self.velocities = (0..self.num_particles)
-            // TODO: can I just add .into_par_iter() here?
+            .into_par_iter()
             .map(|i| self.calculate_pressure(i, delta))
             .collect();
     }
@@ -384,7 +384,7 @@ impl Simulation {
     pub fn toggle_smoothing_radius(&mut self) {
         self.debug.show_smoothing_radius = !self.debug.show_smoothing_radius;
     }
-    
+
     pub fn toggle_heatmap(&mut self) {
         self.debug.use_heatmap = !self.debug.use_heatmap;
     }
