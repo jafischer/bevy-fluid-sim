@@ -1,17 +1,19 @@
+mod args;
 mod digit_keys;
 mod particle;
 mod sim;
 mod spatial_hash;
-mod args;
+
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use bevy::color::palettes::basic::*;
 use bevy::color::palettes::css::GOLD;
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResized, WindowResolution};
-use clap::Parser;
+
 use crate::args::ARGS;
-use crate::digit_keys::{key_number, DIGIT_KEYS};
 use crate::particle::Particle;
 use crate::sim::Simulation;
 
@@ -26,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let width: u16 = win_size[0].parse()?;
     let height: u16 = win_size[1].parse()?;
-    
+
     App::new()
         .add_plugins((
             DefaultPlugins.set(WindowPlugin {
@@ -45,7 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             (update_particles, draw_debug_info, handle_keypress, handle_mouse_clicks, on_resize, update_fps),
         )
         .run();
-    
+
     Ok(())
 }
 
@@ -81,7 +83,13 @@ fn setup(
             ),
             FpsText,
         ));
+
+    commands.spawn(KeyboardCommands::new());
 }
+
+const COLD: Vec3 = Vec3::new(0.0, 0.5, 1.0);
+const HOT: Vec3 = Vec3::new(1.0, 0.3, 0.3);
+const DIFF: Vec3 = Vec3::new(HOT.x - COLD.x, HOT.y - COLD.y, HOT.z - COLD.z);
 
 fn update_particles(
     mut commands: Commands,
@@ -90,10 +98,6 @@ fn update_particles(
     time: Res<Time>,
     mut sim: Single<&mut Simulation>,
 ) {
-    let cold = Vec3::new(0.0, 0.5, 1.0);
-    let hot = Vec3::new(1.0, 0.2, 0.1);
-    let diff = hot - cold;
-
     sim.update_particles(time.delta_secs());
 
     particle_query.iter_mut().for_each(|(entity, mut transform, particle)| {
@@ -105,7 +109,7 @@ fn update_particles(
                 .insert(MeshMaterial2d(materials.add(Color::linear_rgb(1.0, 1.0, 0.0))));
         } else {
             let density_scale = (sim.densities[particle.id].0 - sim.target_density) / sim.target_density;
-            let color = cold + density_scale.clamp(0.0, 2.0) / 2.0 * diff;
+            let color = COLD + density_scale.clamp(0.0, 2.0) / 2.0 * DIFF;
             // if sim.densities[particle.id].0 < 2.0 {
             //     // use gizmo to draw a circle here
             // }
@@ -144,6 +148,190 @@ fn draw_debug_info(mut gizmos: Gizmos, particle_query: Query<(&Transform, &Parti
     }
 }
 
+struct KeyboardCommand {
+    pub last_action_time: Instant,
+    pub interval: Duration,
+    pub action: fn(
+        &mut Simulation,
+        // true == shift is pressed
+        bool,
+        // current mouse cursor position
+        &Vec2,
+        // Particle query
+        particle_query: &mut Query<(&mut Transform, &mut Particle)>,
+    ),
+}
+
+#[derive(Component)]
+struct KeyboardCommands {
+    pub commands: HashMap<KeyCode, KeyboardCommand>,
+}
+
+impl KeyboardCommands {
+    fn new() -> Self {
+        let mut kb_cmds = KeyboardCommands {
+            commands: HashMap::new(),
+        };
+
+        // Space: freeze / unfreeze particle motion.
+        kb_cmds.commands.insert(
+            KeyCode::Space,
+            KeyboardCommand {
+                last_action_time: Instant::now(),
+                interval: Duration::from_millis(250),
+                action: |sim, _, _, _| {
+                    if sim.frames_to_advance() == 0 {
+                        sim.set_frames_to_show(u32::MAX);
+                    } else {
+                        sim.set_frames_to_show(0);
+                    }
+                },
+            },
+        );
+
+        // 1: advance 1 frames.
+        kb_cmds.commands.insert(
+            KeyCode::Digit1,
+            KeyboardCommand {
+                last_action_time: Instant::now(),
+                interval: Duration::from_millis(100),
+                action: |sim, _, _, _| {
+                    sim.set_frames_to_show(1);
+                },
+            },
+        );
+
+        // A: toggle velocity arrows
+        kb_cmds.commands.insert(
+            KeyCode::KeyA,
+            KeyboardCommand {
+                last_action_time: Instant::now(),
+                interval: Duration::from_millis(250),
+                action: |sim, _, _, _| {
+                    sim.toggle_arrows();
+                },
+            },
+        );
+        // C: toggle smoothing radius circle.
+        kb_cmds.commands.insert(
+            KeyCode::KeyC,
+            KeyboardCommand {
+                last_action_time: Instant::now(),
+                interval: Duration::from_millis(250),
+                action: |sim, _, _, _| {
+                    sim.toggle_circles();
+                },
+            },
+        );
+        // G: increase/decrease gravity
+        kb_cmds.commands.insert(
+            KeyCode::KeyG,
+            KeyboardCommand {
+                last_action_time: Instant::now(),
+                interval: Duration::from_millis(50),
+                action: |sim, shift, _, _| {
+                    if shift {
+                        sim.adj_gravity(-0.5);
+                    } else {
+                        sim.adj_gravity(0.5);
+                    }
+                },
+            },
+        );
+        // I: toggle inertia (see sim.calculate_pressure()).
+        kb_cmds.commands.insert(
+            KeyCode::KeyI,
+            KeyboardCommand {
+                last_action_time: Instant::now(),
+                interval: Duration::from_millis(250),
+                action: |sim, _, _, _| {
+                    sim.toggle_inertia();
+                },
+            },
+        );
+        // L: log debug info in the next frame
+        kb_cmds.commands.insert(
+            KeyCode::KeyL,
+            KeyboardCommand {
+                last_action_time: Instant::now(),
+                interval: Duration::from_millis(250),
+                action: |sim, _, _, _| {
+                    sim.log_next_frame();
+                },
+            },
+        );
+        // R: reset the simulation
+        kb_cmds.commands.insert(
+            KeyCode::KeyR,
+            KeyboardCommand {
+                last_action_time: Instant::now(),
+                interval: Duration::from_millis(250),
+                action: |sim, _, _, _| {
+                    sim.reset();
+                },
+            },
+        );
+        // I: toggle inertia (see sim.calculate_pressure()).
+        kb_cmds.commands.insert(
+            KeyCode::KeyV,
+            KeyboardCommand {
+                last_action_time: Instant::now(),
+                interval: Duration::from_millis(250),
+                action: |sim, _, _, _| {
+                    sim.toggle_viscosity();
+                },
+            },
+        );
+
+        // S: increase/decrease smoothing radius.
+        kb_cmds.commands.insert(
+            KeyCode::KeyS,
+            KeyboardCommand {
+                last_action_time: Instant::now(),
+                interval: Duration::from_millis(50),
+                action: |sim, shift, _, _| {
+                    if shift {
+                        sim.adj_smoothing_radius(0.01);
+                    } else {
+                        sim.adj_smoothing_radius(-0.01);
+                    }
+                },
+            },
+        );
+        // W: "watch" the particle(s) under the cursor (color them yellow).
+        // Shift-W: clear all watched particles.
+        kb_cmds.commands.insert(
+            KeyCode::KeyW,
+            KeyboardCommand {
+                last_action_time: Instant::now(),
+                interval: Duration::from_millis(250),
+                action: |sim, shift, cursor_pos, particle_query| {
+                    if shift {
+                        particle_query
+                            .par_iter_mut()
+                            .for_each(|(_, mut particle)| particle.watched = false);
+                    } else {
+                        particle_query.par_iter_mut().for_each(|(transform, mut particle)| {
+                            if (transform.translation.xy() - cursor_pos).length() <= sim.particle_size / 2.0 {
+                                println!(
+                                    "Watching particle {} @({},{}) density={}",
+                                    particle.id,
+                                    transform.translation.x,
+                                    transform.translation.y,
+                                    sim.densities[particle.id].0
+                                );
+                                particle.watched = true;
+                            }
+                        });
+                    }
+                },
+            },
+        );
+
+        kb_cmds
+    }
+}
+
 fn handle_keypress(
     kb: Res<ButtonInput<KeyCode>>,
     mut app_exit: EventWriter<AppExit>,
@@ -151,90 +339,31 @@ fn handle_keypress(
     camera_query: Single<(&Camera, &GlobalTransform)>,
     mut particle_query: Query<(&mut Transform, &mut Particle)>,
     window: Single<&Window>,
+    mut kb_cmds: Single<&mut KeyboardCommands>,
 ) {
-    // Space: freeze / unfreeze particle motion.
-    if kb.just_pressed(KeyCode::Space) {
-        if sim.frames_to_advance() == 0 {
-            sim.set_frames_to_show(u32::MAX);
-        } else {
-            sim.set_frames_to_show(0);
-        }
-    }
-    // 1-0: advance 1-10 frames.
-    if kb.any_just_pressed(DIGIT_KEYS) {
-        kb.get_just_pressed().for_each(|key| {
-            let count = sim.frames_to_advance() + key_number(key);
-            sim.set_frames_to_show(count);
-        });
-    }
-    // A: toggle velocity arrows
-    if kb.just_pressed(KeyCode::KeyA) {
-        sim.toggle_arrows();
-    }
-    // C: toggle smoothing radius circle.
-    if kb.just_pressed(KeyCode::KeyC) {
-        sim.toggle_circles();
-    }
-    // G: increase/decrease gravity
-    if kb.just_pressed(KeyCode::KeyG) {
-        if kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight) {
-            sim.adj_gravity(-0.5);
-        } else {
-            sim.adj_gravity(0.5);
-        }
-    }
-    // I: toggle inertia (see sim.calculate_pressure()).
-    if kb.just_pressed(KeyCode::KeyI) {
-        sim.toggle_inertia();
-    }
-    // L: log debug info in the next frame
-    if kb.just_pressed(KeyCode::KeyL) {
-        sim.log_next_frame();
-    }
-    // R: reset the simulation
-    if kb.just_pressed(KeyCode::KeyR) {
-        sim.reset();
-    }
-    // S: increase/decrease smoothing radius.
-    if kb.just_pressed(KeyCode::KeyS) {
-        if kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight) {
-            sim.adj_smoothing_radius(0.01);
-        } else {
-            sim.adj_smoothing_radius(-0.01);
-        }
-    }
-    // W: "watch" the particle(s) under the cursor (color them yellow).
-    // Shift-W: clear all watched particles.
-    if kb.just_pressed(KeyCode::KeyW) {
-        if kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight) {
-            particle_query
-                .par_iter_mut()
-                .for_each(|(_, mut particle)| particle.watched = false);
-        } else {
-            let Some(cursor_position) = window.cursor_position() else {
-                return;
-            };
-            let (camera, camera_transform) = *camera_query;
-
-            // Calculate a world position based on the cursor's position.
-            let Ok(point) = camera.viewport_to_world_2d(camera_transform, cursor_position) else {
-                return;
-            };
-
-            particle_query.par_iter_mut().for_each(|(transform, mut particle)| {
-                if (transform.translation.xy() - point).length() <= sim.particle_size / 2.0 {
-                    println!(
-                        "Watching particle {} @({},{}) density={}",
-                        particle.id, transform.translation.x, transform.translation.y, sim.densities[particle.id].0
-                    );
-                    particle.watched = true;
-                }
-            });
-        }
-    }
     // Esc / Q: quit the app
-    if kb.just_pressed(KeyCode::Escape) || kb.just_pressed(KeyCode::KeyQ) {
+    if kb.pressed(KeyCode::Escape) || kb.pressed(KeyCode::KeyQ) {
         app_exit.send(AppExit::Success);
+    }
+
+    let now = Instant::now();
+    let cursor_pos = if let Some(cursor_position) = window.cursor_position() {
+
+        let (camera, camera_transform) = *camera_query;
+
+        // Calculate a world position based on the cursor's position.
+        camera.viewport_to_world_2d(camera_transform, cursor_position).unwrap_or(Vec2::splat(99999.0))
+    } else {
+        Vec2::splat(99999.0)
+    };
+    
+    for key in kb.get_pressed() {
+        if let Some(command) = kb_cmds.commands.get_mut(key) {
+            if now.duration_since(command.last_action_time) >= command.interval {
+                command.last_action_time = now;
+                (command.action)(&mut sim, kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight), &cursor_pos, &mut particle_query);
+            }
+        }
     }
 }
 
