@@ -20,7 +20,6 @@ use crate::sim::Simulation;
 #[derive(Component)]
 struct FpsText;
 
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let win_size: Vec<_> = ARGS.win.split(',').collect();
     if win_size.len() != 2 {
@@ -348,20 +347,26 @@ fn handle_keypress(
 
     let now = Instant::now();
     let cursor_pos = if let Some(cursor_position) = window.cursor_position() {
-
         let (camera, camera_transform) = *camera_query;
 
         // Calculate a world position based on the cursor's position.
-        camera.viewport_to_world_2d(camera_transform, cursor_position).unwrap_or(Vec2::splat(99999.0))
+        camera
+            .viewport_to_world_2d(camera_transform, cursor_position)
+            .unwrap_or(Vec2::splat(99999.0))
     } else {
         Vec2::splat(99999.0)
     };
-    
+
     for key in kb.get_pressed() {
         if let Some(command) = kb_cmds.commands.get_mut(key) {
             if now.duration_since(command.last_action_time) >= command.interval {
                 command.last_action_time = now;
-                (command.action)(&mut sim, kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight), &cursor_pos, &mut particle_query);
+                (command.action)(
+                    &mut sim,
+                    kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight),
+                    &cursor_pos,
+                    &mut particle_query,
+                );
             }
         }
     }

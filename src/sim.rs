@@ -1,11 +1,13 @@
 use std::f32::consts::PI;
 use std::fmt::{Debug, Formatter};
+
 use bevy::prelude::*;
 use rand::random;
 use rayon::prelude::*;
+
 use crate::args::ARGS;
-use crate::Particle;
 use crate::spatial_hash::{get_cell_2d, hash_cell_2d, key_from_hash, OFFSETS_2D};
+use crate::Particle;
 
 #[derive(Component)]
 pub struct Simulation {
@@ -31,7 +33,7 @@ pub struct Simulation {
     pub positions: Vec<Vec2>,
     pub predicted_positions: Vec<Vec2>,
     pub velocities: Vec<Vec2>,
-    pub densities: Vec<(f32,f32)>,
+    pub densities: Vec<(f32, f32)>,
     pub spatial_offsets: Vec<u32>,
     pub spatial_indices: Vec<[u32; 3]>,
 
@@ -65,13 +67,14 @@ pub struct DebugParams {
     pub log_frame: u32,
     pub show_arrows: bool,
     pub show_smoothing_radius: bool,
-    pub intertia: bool,
+    pub inertia: bool,
+    pub viscosity: bool,
 }
 
 impl Simulation {
     pub fn new(window_width: f32, window_height: f32) -> Simulation {
         let num_particles = ARGS.num as usize;
-        let grid_size = Self::subdivide_into_squares(window_width, window_height, num_particles);
+        let grid_size = Self::subdivide_into_squares(window_width, window_height, num_particles.max(100));
 
         // Because Sebastian's kernel math blows up with smoothing radius values > 1, we don't want to use the
         // actual window coordinates. In Sebastian's video, at 5:40, he shows a smoothing self.smoothing_radius of 0.5
@@ -135,7 +138,8 @@ impl Simulation {
                 log_frame: 0,
                 show_arrows: false,
                 show_smoothing_radius: false,
-                intertia: true,
+                inertia: true,
+                viscosity: true,
             },
         };
 
@@ -171,7 +175,7 @@ impl Simulation {
     fn place_particles(&mut self) {
         for i in 0..self.num_particles {
             let x = -self.half_bounds_size.x + random::<f32>() * self.half_bounds_size.x * 2.0;
-            let y = -self.half_bounds_size.y + random::<f32>() * self.half_bounds_size.y * 2.0;
+            let y = random::<f32>() * self.half_bounds_size.y;
             // let velocity = Vec2::new(random::<f32>() - 0.5, random::<f32>() - 0.5) * self.particle_size;
             let velocity = Vec2::ZERO;
             self.positions[i] = Vec2::new(x, y);
@@ -201,7 +205,7 @@ impl Simulation {
             self.spatial_indices[id] = [index as u32, hash, key];
         }
     }
-    
+
     fn calculate_densities(&mut self) {
         for i in 0..self.num_particles {
             self.densities[i] = self.density(i);
@@ -209,15 +213,21 @@ impl Simulation {
         }
 
         if self.debug.log_frame == self.debug.current_frame {
-            let lowest_density = self.densities.iter()
+            let lowest_density = self
+                .densities
+                .iter()
                 .map(|(density, _)| *density)
-                .reduce(f32::min).unwrap();
-            let highest_density = self.densities.clone().iter()
+                .reduce(f32::min)
+                .unwrap();
+            let highest_density = self
+                .densities
+                .clone()
+                .iter()
                 .map(|(density, _)| *density)
-                .reduce(f32::max).unwrap();
-            let average_density = self.densities.iter()
-                .map(|(density, _)| *density)
-                .sum::<f32>() / self.num_particles as f32;
+                .reduce(f32::max)
+                .unwrap();
+            let average_density =
+                self.densities.iter().map(|(density, _)| *density).sum::<f32>() / self.num_particles as f32;
             self.debug(format!("lowest density: {lowest_density}"));
             self.debug(format!("highest density: {highest_density}"));
             self.debug(format!("average density: {average_density}"));
@@ -238,7 +248,7 @@ impl Simulation {
         }
         (density, density)
     }
-    
+
     pub fn calculate_pressures(&mut self, delta: f32) {
         self.velocities = (0..self.num_particles)
             .map(|i| self.calculate_pressure(i, delta))
@@ -247,25 +257,26 @@ impl Simulation {
 
     fn calculate_pressure(&self, id: usize, delta: f32) -> Vec2 {
         let mut velocity = self.velocities[id];
-        let pressure_force = self.pressure_force(id);
-        let velocity_inc = (self.external_forces(&self.positions[id], &velocity) + pressure_force) * delta;
+        let pressure_force = self.pressure_force(id) * delta;
+        let gravity_force = self.external_forces(&self.positions[id], &velocity) * delta;
 
-        if self.debug.intertia {
-            velocity += velocity_inc;
+        if self.debug.inertia {
+            // Poor man's viscosity:
+            if self.debug.viscosity {
+                velocity = (velocity + pressure_force).clamp_length_max(30.0 * self.particle_size * delta);
+            }
+            velocity += gravity_force;
         } else {
-            velocity = velocity_inc;
+            velocity = pressure_force + gravity_force;
         }
-
-        // Poor man's viscosity:
-        velocity = velocity.clamp_length_max(20.0 * self.particle_size * delta);
 
         velocity
     }
 
     pub fn apply_velocities(&mut self) {
-       for i in 0..self.num_particles {
-           self.apply_velocity(i);
-       }
+        for i in 0..self.num_particles {
+            self.apply_velocity(i);
+        }
     }
 
     fn apply_velocity(&mut self, id: usize) {
@@ -312,8 +323,13 @@ impl Simulation {
     }
 
     pub fn toggle_inertia(&mut self) {
-        self.debug.intertia = !self.debug.intertia;
-        println!("inc_velocity: {}", self.debug.intertia);
+        self.debug.inertia = !self.debug.inertia;
+        println!("inertia: {}", self.debug.inertia);
+    }
+
+    pub fn toggle_viscosity(&mut self) {
+        self.debug.viscosity = !self.debug.viscosity;
+        println!("viscosity: {}", self.debug.viscosity);
     }
 
     pub fn log_next_frame(&mut self) {
@@ -321,7 +337,7 @@ impl Simulation {
     }
 
     pub fn adj_smoothing_radius(&mut self, increment: f32) {
-        self.smoothing_radius = (self.smoothing_radius  + increment).max(increment.abs());
+        self.smoothing_radius = (self.smoothing_radius + increment).max(increment.abs());
         self.smoothing_scaling_factor = 6.0 / (PI * self.smoothing_radius.powf(4.0));
         self.smoothing_derivative_scaling_factor = PI * self.smoothing_radius.powf(4.0) / 6.0;
         println!("smoothing_radius: {}", self.smoothing_radius);
@@ -381,8 +397,8 @@ impl Simulation {
             }
             if distance == 0.0 {
                 // Move toward the center, plus a random vector.
-                gradient += (Vec2::new(random::<f32>() - 0.5, random::<f32>() - 0.5)
-                    + (Vec2::ZERO - position)) * self.particle_size;
+                gradient += (Vec2::new(random::<f32>() - 0.5, random::<f32>() - 0.5) + (Vec2::ZERO - position))
+                    * self.particle_size;
 
                 continue;
             }
@@ -450,19 +466,19 @@ impl Simulation {
     fn density_kernel(&self, dst: f32) -> f32 {
         self.spiky_kernel_pow2(dst)
     }
-    
+
     fn near_density_kernel(&self, dst: f32) -> f32 {
         self.spiky_kernel_pow3(dst)
     }
-    
+
     fn density_derivative(&self, dst: f32) -> f32 {
         self.derivative_spiky_pow2(dst)
     }
-    
+
     fn near_density_derivative(&self, dst: f32) -> f32 {
         self.derivative_spiky_pow3(dst)
     }
-    
+
     fn viscosity_kernel(&self, dst: f32) -> f32 {
         self.smoothing_kernel_poly6(dst)
     }
@@ -480,8 +496,7 @@ impl Simulation {
             let key = key_from_hash(hash, self.num_particles as u32);
             let mut curr_index = self.spatial_offsets[key as usize];
 
-            while (curr_index as usize) < self.num_particles
-            {
+            while (curr_index as usize) < self.num_particles {
                 let index_data = self.spatial_indices[curr_index as usize];
                 curr_index += 1;
                 // Exit if no longer looking at correct bin
@@ -526,20 +541,20 @@ impl Simulation {
         if self.interaction_input_strength != 0.0 {
             let input_point_offset = self.interaction_input_point - pos;
             let sqr_dst = input_point_offset.dot(input_point_offset);
-            if sqr_dst < self.interaction_input_radius * self.interaction_input_radius
-            {
+            if sqr_dst < self.interaction_input_radius * self.interaction_input_radius {
                 let dst = sqr_dst.sqrt();
                 let edge_t = dst / self.interaction_input_radius;
                 let centre_t = 1.0 - edge_t;
                 let dir_to_centre = input_point_offset / dst;
 
                 let gravity_weight = 1.0 - (centre_t * (self.interaction_input_strength / 10.0).clamp(0.0, 1.0));
-                let mut accel = self.gravity * gravity_weight + dir_to_centre * centre_t * self.interaction_input_strength;
+                let mut accel =
+                    self.gravity * gravity_weight + dir_to_centre * centre_t * self.interaction_input_strength;
                 accel -= velocity * centre_t;
                 return accel * self.scale;
             }
         }
 
-       self.gravity * self.scale
+        self.gravity * self.scale
     }
 }

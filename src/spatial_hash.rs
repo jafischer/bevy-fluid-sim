@@ -16,10 +16,7 @@ const HASH_K1: u32 = 15823;
 const HASH_K2: u32 = 9737333;
 
 pub fn get_cell_2d(position: &Vec2, smoothing_radius: f32) -> (i32, i32) {
-    (
-        (position.x / smoothing_radius).floor() as i32,
-        (position.y / smoothing_radius).floor() as i32,
-    )
+    ((position.x / smoothing_radius).floor() as i32, (position.y / smoothing_radius).floor() as i32)
 }
 
 pub fn hash_cell_2d(cell: &(i32, i32)) -> u32 {
