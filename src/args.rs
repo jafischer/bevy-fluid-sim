@@ -9,8 +9,13 @@ pub struct Args {
     #[arg(long, default_value = "400,500")]
     pub win: String,
 
+    #[cfg(debug_assertions)]
     /// Number of particles
-    #[arg(long, default_value = "2500")]
+    #[arg(long, default_value = "2000")]
+    pub num: u32,
+    #[cfg(not(debug_assertions))]
+    /// Number of particles
+    #[arg(long, default_value = "10000")]
     pub num: u32,
     /// Initial smoothing radius (where 1.0 == a circle of approx 25 particles in diameter).
     #[arg(long, default_value = "0.3")]
@@ -18,7 +23,7 @@ pub struct Args {
     /// Initial gravity
     #[arg(long, default_value = "-10.0")]
     pub gravity: f32,
-    #[arg(long, default_value = "500")]
+    #[arg(long, default_value = "750")]
     pub pressure_multiplier: u32,
     #[arg(long, default_value = "25")]
     pub near_pressure_multiplier: u32,
