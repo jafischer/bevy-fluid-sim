@@ -1,6 +1,5 @@
 use std::f32::consts::PI;
 use std::fmt::{Debug, Formatter};
-
 use bevy::prelude::*;
 use rand::random;
 use rayon::prelude::*;
@@ -24,20 +23,23 @@ pub struct Simulation {
     pub near_pressure_multiplier: f32,
     pub collision_damping: f32,
 
-    //
+    // For attraction/repulsion effect when mouse is clicked:
     pub interaction_input_strength: f32,
     pub interaction_input_radius: f32,
     pub interaction_input_point: Vec2,
 
     // Particle information:
     pub positions: Vec<Vec2>,
-    pub predicted_positions: Vec<Vec2>,
     pub velocities: Vec<Vec2>,
     pub densities: Vec<(f32, f32)>,
+    pub region_rows: usize,
+    pub region_cols: usize,
+    pub regions: Vec<Vec<Vec<usize>>>,
+    
+    // Fluid-Sim fields:
+    pub predicted_positions: Vec<Vec2>,
     pub spatial_offsets: Vec<u32>,
     pub spatial_indices: Vec<[u32; 3]>,
-
-    // From Fluid-Sim
     pub poly6_scaling_factor: f32,
     pub spiky_pow3_scaling_factor: f32,
     pub spiky_pow2_scaling_factor: f32,
@@ -67,14 +69,17 @@ pub struct DebugParams {
     pub log_frame: u32,
     pub show_arrows: bool,
     pub show_smoothing_radius: bool,
-    pub inertia: bool,
-    pub viscosity: bool,
+    pub use_inertia: bool,
+    pub use_viscosity: bool,
+    pub use_heatmap: bool,
 }
 
 impl Simulation {
     pub fn new(window_width: f32, window_height: f32) -> Simulation {
         let num_particles = ARGS.num as usize;
-        let grid_size = Self::subdivide_into_squares(window_width, window_height, num_particles.max(100));
+        // Pick a particle size such that the "fluid" will fill roughly 2/3 the window.
+        let window_area = window_width * window_height;
+        let particle_size = (window_area * 0.67 / num_particles as f32).sqrt();
 
         // Because Sebastian's kernel math blows up with smoothing radius values > 1, we don't want to use the
         // actual window coordinates. In Sebastian's video, at 5:40, he shows a smoothing self.smoothing_radius of 0.5
@@ -83,9 +88,8 @@ impl Simulation {
         // So we'll just scale down the grid size to 0.08333 (1/12).
         // grid_size * scale = 0.08333
         // --> scale = 0.08333 / grid_size, see, I can still do grade school math.
-        let scale = 0.08333 / grid_size;
-        let grid_size = grid_size * scale;
-        let particle_size = grid_size * 0.8;
+        let scale = 0.08333 / particle_size;
+        let particle_size = particle_size * scale;
         let smoothing_radius = ARGS.smoothing_radius;
 
         let mut positions = Vec::with_capacity(num_particles);
@@ -108,9 +112,9 @@ impl Simulation {
             num_particles,
             particle_size,
             scale,
-            half_bounds_size: Vec2::new(window_width, window_height) * scale / 2.0 - particle_size / 2.0,
+            half_bounds_size: Vec2::new(window_width, window_height) * scale / 2.0,
             gravity: Vec2::new(0.0, ARGS.gravity),
-            target_density: 1.0 / scale,
+            target_density: 2.0 / scale,
             pressure_multiplier: ARGS.pressure_multiplier as f32,
             near_pressure_multiplier: ARGS.near_pressure_multiplier as f32,
             collision_damping: ARGS.collision_damping,
@@ -120,12 +124,15 @@ impl Simulation {
             interaction_input_point: Vec2::ZERO,
 
             positions,
-            predicted_positions,
             velocities,
             densities,
+            region_rows: 0,
+            region_cols: 0,
+            regions: vec![],
+            
+            predicted_positions,
             spatial_offsets,
             spatial_indices,
-
             poly6_scaling_factor: 4.0 / (PI * smoothing_radius.powf(8.0)),
             spiky_pow3_scaling_factor: 10.0 / (PI * smoothing_radius.powf(5.0)),
             spiky_pow2_scaling_factor: 6.0 / (PI * smoothing_radius.powf(4.0)),
@@ -138,8 +145,9 @@ impl Simulation {
                 log_frame: 0,
                 show_arrows: false,
                 show_smoothing_radius: false,
-                inertia: true,
-                viscosity: true,
+                use_inertia: true,
+                use_viscosity: true,
+                use_heatmap: false,
             },
         };
 
@@ -184,10 +192,9 @@ impl Simulation {
     }
 
     pub fn update_particles(&mut self, delta: f32) {
-        self.update_spatial_hash();
-        self.calculate_densities();
-
         if self.frames_to_advance() > 0 {
+            self.update_regions();
+            self.calculate_densities();
             self.calculate_pressures(delta);
             self.apply_velocities();
         }
@@ -206,10 +213,49 @@ impl Simulation {
         }
     }
 
+    fn update_regions(&mut self) {
+        let width = self.half_bounds_size.x * 2.0;
+        let height = self.half_bounds_size.y * 2.0;
+        let cols = (width / self.smoothing_radius) as usize + 1;
+        let rows = (height / self.smoothing_radius) as usize + 1;
+        let num_regions = rows * cols;
+        
+        // If window size or smoothing radius has changed, need to resize the regions vector.
+        if self.region_rows != rows || self.region_cols != cols {
+            self.region_rows = rows;
+            self.region_cols = cols;
+            self.regions.clear();
+            for row in 0..rows {
+                self.regions.push(vec![]);
+                for _ in 0..cols {
+                    let region = Vec::with_capacity(self.num_particles / num_regions * 4);
+                    self.regions[row].push(region);
+                }
+            }
+        } else {
+            for row in 0..rows {
+                for col in 0..cols {
+                    self.regions[row][col].clear();
+                }
+            }
+        }
+
+        let left = -self.half_bounds_size.x;
+        let bottom = -self.half_bounds_size.y;
+        for i in 0..self.num_particles {
+            let col = ((self.positions[i].x - left) / self.smoothing_radius) as usize;
+            let row = ((self.positions[i].y - bottom) / self.smoothing_radius) as usize;
+            // While the window is being resized, some particles can be temporarily
+            // outside the window.
+            let col = col.clamp(0, cols - 1);
+            let row = row.clamp(0, rows - 1);
+            self.regions[row][col].push(i);
+        }
+    }
+
     fn calculate_densities(&mut self) {
         for i in 0..self.num_particles {
             self.densities[i] = self.density(i);
-            // self.densities[i] = self.calculate_density(&self.positions[i])
         }
 
         if self.debug.log_frame == self.debug.current_frame {
@@ -238,19 +284,36 @@ impl Simulation {
         let position = self.positions[id];
         let mut density = 1.0;
 
-        for (i, other_position) in self.positions.iter().enumerate() {
-            if i == id {
-                continue;
-            }
-            let distance = (other_position - position).length().max(0.000000001);
-            let influence = self.smoothing_kernel(distance);
-            density += influence;
+        let bottom = -self.half_bounds_size.y;
+        let left = -self.half_bounds_size.x;
+        let particle_row = ((self.positions[id].y - bottom) / self.smoothing_radius) as usize;
+        let particle_col = ((self.positions[id].x - left) / self.smoothing_radius) as usize;
+
+        for offset in OFFSETS_2D {
+            let region_row = particle_row as i32 + offset.0;
+            let region_col = particle_col as i32 + offset.1;
+            if region_row >= 0 && region_col >= 0 {
+                let region_row = region_row as usize;
+                let region_col = region_col as usize;
+                if region_row < self.region_rows && region_col < self.region_cols {
+                    let row = &self.regions[region_row];
+                    for i in &row[region_col] {
+                        if *i == id {
+                            continue;
+                        }
+                        let distance = (self.positions[*i] - position).length().max(0.000000001);
+                        let influence = self.smoothing_kernel(distance);
+                        density += influence;
+                    }
+                }
+            } 
         }
         (density, density)
     }
 
     pub fn calculate_pressures(&mut self, delta: f32) {
         self.velocities = (0..self.num_particles)
+            // TODO: can I just add .into_par_iter() here?
             .map(|i| self.calculate_pressure(i, delta))
             .collect();
     }
@@ -260,9 +323,9 @@ impl Simulation {
         let pressure_force = self.pressure_force(id) * delta;
         let gravity_force = self.external_forces(&self.positions[id], &velocity) * delta;
 
-        if self.debug.inertia {
+        if self.debug.use_inertia {
             // Poor man's viscosity:
-            if self.debug.viscosity {
+            if self.debug.use_viscosity {
                 velocity = (velocity + pressure_force).clamp_length_max(30.0 * self.particle_size * delta);
             }
             velocity += gravity_force;
@@ -289,7 +352,7 @@ impl Simulation {
     }
 
     pub fn on_resize(&mut self, window_width: f32, window_height: f32) {
-        self.half_bounds_size = Vec2::new(window_width, window_height) * self.scale / 2.0 - self.particle_size / 2.0;
+        self.half_bounds_size = Vec2::new(window_width, window_height) * self.scale / 2.0;
     }
 
     pub fn end_frame(&mut self) {
@@ -318,18 +381,22 @@ impl Simulation {
         self.debug.show_arrows = !self.debug.show_arrows;
     }
 
-    pub fn toggle_circles(&mut self) {
+    pub fn toggle_smoothing_radius(&mut self) {
         self.debug.show_smoothing_radius = !self.debug.show_smoothing_radius;
+    }
+    
+    pub fn toggle_heatmap(&mut self) {
+        self.debug.use_heatmap = !self.debug.use_heatmap;
     }
 
     pub fn toggle_inertia(&mut self) {
-        self.debug.inertia = !self.debug.inertia;
-        println!("inertia: {}", self.debug.inertia);
+        self.debug.use_inertia = !self.debug.use_inertia;
+        println!("inertia: {}", self.debug.use_inertia);
     }
 
     pub fn toggle_viscosity(&mut self) {
-        self.debug.viscosity = !self.debug.viscosity;
-        println!("viscosity: {}", self.debug.viscosity);
+        self.debug.use_viscosity = !self.debug.use_viscosity;
+        println!("viscosity: {}", self.debug.use_viscosity);
     }
 
     pub fn log_next_frame(&mut self) {
@@ -371,11 +438,11 @@ impl Simulation {
     }
 
     fn resolve_collisions(&mut self, id: usize) {
-        if self.positions[id].x.abs() > self.half_bounds_size.x {
+        if self.positions[id].x.abs() > self.half_bounds_size.x - self.particle_size * 0.5 {
             self.positions[id].x = self.half_bounds_size.x * self.positions[id].x.signum();
             self.velocities[id].x *= -1.0 * self.collision_damping;
         }
-        if self.positions[id].y.abs() > self.half_bounds_size.y {
+        if self.positions[id].y.abs() > self.half_bounds_size.y - self.particle_size * 0.5 {
             self.positions[id].y = self.half_bounds_size.y * self.positions[id].y.signum();
             self.velocities[id].y *= -1.0 * self.collision_damping;
         }
@@ -386,41 +453,66 @@ impl Simulation {
         let position = self.positions[id];
         let density = self.densities[id].0;
 
-        for i in 0..self.num_particles {
-            if i == id {
-                continue;
-            }
-            let offset = self.positions[i] - position;
-            let distance = offset.length();
-            if distance >= self.smoothing_radius {
-                continue;
-            }
-            if distance == 0.0 {
-                // Move toward the center, plus a random vector.
-                gradient += (Vec2::new(random::<f32>() - 0.5, random::<f32>() - 0.5) + (Vec2::ZERO - position))
-                    * self.particle_size;
+        let bottom = -self.half_bounds_size.y;
+        let left = -self.half_bounds_size.x;
+        let particle_row = ((self.positions[id].y - bottom) / self.smoothing_radius) as usize;
+        let particle_col = ((self.positions[id].x - left) / self.smoothing_radius) as usize;
 
-                continue;
-            }
+        for offset in OFFSETS_2D {
+            let region_row = particle_row as i32 + offset.0;
+            let region_col = particle_col as i32 + offset.1;
+            if region_row >= 0 && region_col >= 0 {
+                let region_row = region_row as usize;
+                let region_col = region_col as usize;
+                if region_row < self.region_rows && region_col < self.region_cols {
+                    let row = &self.regions[region_row];
+                    for i in &row[region_col] {
+                        if *i == id {
+                            continue;
+                        }
+                        let offset = self.positions[*i] - position;
+                        let distance = offset.length();
+                        if distance >= self.smoothing_radius {
+                            continue;
+                        }
+                        if distance == 0.0 {
+                            // Move toward the center, plus a random vector.
+                            gradient += (Vec2::new(random::<f32>() - 0.5, random::<f32>() - 0.5) + (Vec2::ZERO - position))
+                                * self.particle_size;
 
-            // Unit vector in the direction of the particle.
-            let direction = offset / distance;
-            let slope = self.smoothing_kernel_derivative(distance);
-            let pressure = self.shared_pressure(density, self.densities[i].0);
-            gradient += direction * slope * pressure / self.densities[i].0;
-            // gradient += direction * (slope * pressure / self.densities[i].0).min(self.particle_size);
+                            continue;
+                        }
+
+                        // Unit vector in the direction of the particle.
+                        let direction = offset / distance;
+                        let slope = self.smoothing_kernel_derivative(distance);
+                        let pressure = self.shared_pressure(density, self.densities[*i].0);
+                        gradient += direction * slope * pressure / self.densities[*i].0;
+                        // gradient += direction * (slope * pressure / self.densities[i].0).min(self.particle_size);
+                    }
+                }
+            }
         }
 
         gradient
     }
 
     /// Divides a rectangular region into (roughly) n squares.
-    fn subdivide_into_squares(w: f32, h: f32, n: usize) -> f32 {
+    fn subdivide_into_squares(w: f32, h: f32, n: usize) -> (f32, usize, usize) {
         // Step 1: Calculate the target area of each square
         let target_area = (w * h) / n as f32;
 
         // Step 2: Calculate the side length of each square
-        target_area.sqrt()
+        let side_length = target_area.sqrt();
+
+        // Step 3: Calculate the number of columns and rows
+        let columns = w / side_length;
+        let rows = n as f32 / columns;
+
+        // Step 4: Adjust the final side length to fit evenly
+        let side_length = f32::min(w / columns, h / rows);
+
+        (side_length, columns as usize, rows as usize)
     }
 
     fn smoothing_kernel_poly6(&self, dst: f32) -> f32 {
