@@ -21,6 +21,7 @@ pub struct Simulation {
     pub target_density: f32,
     pub pressure_multiplier: f32,
     pub near_pressure_multiplier: f32,
+    pub speed_limit: f32,
     pub collision_damping: f32,
 
     // For attraction/repulsion effect when mouse is clicked:
@@ -55,6 +56,7 @@ impl Debug for Simulation {
         writeln!(f, "    smoothing_radius: {}", self.smoothing_radius)?;
         writeln!(f, "    num_particles: {}", self.num_particles)?;
         writeln!(f, "    scale: {}", self.scale)?;
+        writeln!(f, "    particle_size: {}", self.particle_size)?;
         writeln!(f, "    gravity: {}", self.gravity)?;
         writeln!(f, "    target_density: {}", self.target_density)?;
         writeln!(f, "    pressure_multiplier: {}", self.pressure_multiplier)?;
@@ -69,6 +71,7 @@ pub struct DebugParams {
     pub log_frame: u32,
     pub show_arrows: bool,
     pub show_smoothing_radius: bool,
+    pub show_region_grid: bool,
     pub use_inertia: bool,
     pub use_viscosity: bool,
     pub use_heatmap: bool,
@@ -92,17 +95,17 @@ impl Simulation {
         let particle_size = particle_size * scale;
         let smoothing_radius = ARGS.smoothing_radius;
 
-        let mut positions = Vec::with_capacity(num_particles);
+        let mut positions = vec![];
         positions.resize_with(num_particles, Default::default);
-        let mut velocities = Vec::with_capacity(num_particles);
+        let mut velocities = vec![];
         velocities.resize_with(num_particles, Default::default);
-        let mut densities = Vec::with_capacity(num_particles);
+        let mut densities = vec![];
         densities.resize_with(num_particles, Default::default);
-        let mut spatial_offsets = Vec::with_capacity(num_particles);
+        let mut spatial_offsets = vec![];
         spatial_offsets.resize_with(num_particles, Default::default);
-        let mut spatial_indices = Vec::with_capacity(num_particles);
+        let mut spatial_indices = vec![];
         spatial_indices.resize_with(num_particles, Default::default);
-        let mut predicted_positions = Vec::with_capacity(num_particles);
+        let mut predicted_positions = vec![];
         predicted_positions.resize_with(num_particles, Default::default);
 
         let sim = Simulation {
@@ -112,11 +115,12 @@ impl Simulation {
             num_particles,
             particle_size,
             scale,
-            half_bounds_size: Vec2::new(window_width, window_height) * scale / 2.0,
-            gravity: Vec2::new(0.0, ARGS.gravity),
-            target_density: 2.0 / scale,
+            half_bounds_size: Vec2::new(window_width, window_height) * scale / 2.0 - particle_size / 2.0,
+            gravity: Vec2::new(0.0, -ARGS.gravity),
+            target_density: 1.5 / scale,
             pressure_multiplier: ARGS.pressure_multiplier as f32,
             near_pressure_multiplier: ARGS.near_pressure_multiplier as f32,
+            speed_limit: 50.0,
             collision_damping: ARGS.collision_damping,
 
             interaction_input_strength: 0.0,
@@ -145,6 +149,7 @@ impl Simulation {
                 log_frame: 0,
                 show_arrows: false,
                 show_smoothing_radius: false,
+                show_region_grid: false,
                 use_inertia: true,
                 use_viscosity: true,
                 use_heatmap: true,
@@ -160,7 +165,7 @@ impl Simulation {
         &mut self,
         commands: &mut Commands,
     ) {
-        let color = Color::linear_rgb(0.0, 0.3, 1.0);
+        let color = Color::linear_rgb(0.3, 0.5, 1.0);
 
         self.place_particles();
 
@@ -179,20 +184,19 @@ impl Simulation {
     }
 
     fn place_particles(&mut self) {
+        let bounds = self.half_bounds_size * 0.8;
         for i in 0..self.num_particles {
-            let x = -self.half_bounds_size.x + random::<f32>() * self.half_bounds_size.x * 2.0;
-            let y = random::<f32>() * self.half_bounds_size.y;
-            // let velocity = Vec2::new(random::<f32>() - 0.5, random::<f32>() - 0.5) * self.particle_size;
-            let velocity = Vec2::ZERO;
+            let x = -bounds.x + random::<f32>() * bounds.x * 2.0;
+            let y = -bounds.y + random::<f32>() * bounds.y * 2.0;
             self.positions[i] = Vec2::new(x, y);
-            self.velocities[i] = velocity;
+            self.velocities[i] = Vec2::ZERO;
         }
     }
 
     pub fn update_particles(&mut self, delta: f32) {
+        self.update_regions();
+        self.calculate_densities();
         if self.frames_to_advance() > 0 {
-            self.update_regions();
-            self.calculate_densities();
             self.calculate_pressures(delta);
             self.apply_velocities();
         }
@@ -325,7 +329,7 @@ impl Simulation {
         if self.debug.use_inertia {
             // Poor man's viscosity:
             if self.debug.use_viscosity {
-                velocity = (velocity + pressure_force).clamp_length_max(30.0 * self.particle_size * delta);
+                velocity = (velocity + pressure_force).clamp_length_max(self.speed_limit * self.particle_size * delta);
             } else {
                 velocity += pressure_force;
             }
@@ -353,7 +357,7 @@ impl Simulation {
     }
 
     pub fn on_resize(&mut self, window_width: f32, window_height: f32) {
-        self.half_bounds_size = Vec2::new(window_width, window_height) * self.scale / 2.0;
+        self.half_bounds_size = Vec2::new(window_width, window_height) * self.scale / 2.0 - self.particle_size / 2.0;
     }
 
     pub fn end_frame(&mut self) {
@@ -386,6 +390,10 @@ impl Simulation {
 
     pub fn toggle_smoothing_radius(&mut self) {
         self.debug.show_smoothing_radius = !self.debug.show_smoothing_radius;
+    }
+
+    pub fn toggle_region_grid(&mut self) {
+        self.debug.show_region_grid = !self.debug.show_region_grid;
     }
 
     pub fn toggle_heatmap(&mut self) {
@@ -441,11 +449,11 @@ impl Simulation {
     }
 
     fn resolve_collisions(&mut self, id: usize) {
-        if self.positions[id].x.abs() > self.half_bounds_size.x - self.particle_size * 0.5 {
+        if self.positions[id].x.abs() > self.half_bounds_size.x {
             self.positions[id].x = self.half_bounds_size.x * self.positions[id].x.signum();
             self.velocities[id].x *= -1.0 * self.collision_damping;
         }
-        if self.positions[id].y.abs() > self.half_bounds_size.y - self.particle_size * 0.5 {
+        if self.positions[id].y.abs() > self.half_bounds_size.y {
             self.positions[id].y = self.half_bounds_size.y * self.positions[id].y.signum();
             self.velocities[id].y *= -1.0 * self.collision_damping;
         }
@@ -491,7 +499,6 @@ impl Simulation {
                         let slope = self.smoothing_kernel_derivative(distance);
                         let pressure = self.shared_pressure(density, self.densities[*i].0);
                         gradient += direction * slope * pressure / self.densities[*i].0;
-                        // gradient += direction * (slope * pressure / self.densities[i].0).min(self.particle_size);
                     }
                 }
             }

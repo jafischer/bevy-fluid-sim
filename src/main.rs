@@ -40,6 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }),
             FrameTimeDiagnosticsPlugin,
         ))
+        .insert_resource(Time::<Fixed>::from_hz(128.0))
         .add_systems(Startup, setup)
         .add_systems(
             Update,
@@ -102,14 +103,19 @@ const HOT: Vec3 = Vec3::new(1.0, 0.0, 0.0);
 const COLD_DIFF: Vec3 = Vec3::new(NEUTRAL.x - COLD.x, NEUTRAL.y - COLD.y, NEUTRAL.z - COLD.z);
 const WARM_DIFF: Vec3 = Vec3::new(HOT.x - NEUTRAL.x, HOT.y - NEUTRAL.y, HOT.z - NEUTRAL.z);
 
+const STOPPED: Vec3 = Vec3::new(0.0, 0.0, 0.2);
+const FAST: Vec3 = Vec3::new(0.5, 0.5, 1.0);
+const SPEED_DIFF: Vec3 = Vec3::new(FAST.x - STOPPED.x, FAST.y - STOPPED.y, FAST.z - STOPPED.z);
+
 fn update_particles(
     mut commands: Commands,
     mut particle_query: Query<(Entity, &mut Transform, &mut Particle)>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
     time: Res<Time>,
     mut sim: Single<&mut Simulation>,
 ) {
     sim.update_particles(time.delta_secs());
+
+    let mut max_speed: f32 = 0.0;
 
     particle_query.iter_mut().for_each(|(entity, mut transform, particle)| {
         transform.translation.x = sim.positions[particle.id].x;
@@ -126,8 +132,13 @@ fn update_particles(
             };
             Color::linear_rgb(rgb.x, rgb.y, rgb.z)
         } else {
-            Color::linear_rgb(0.0, 0.0, 0.5)
+            let speed = sim.velocities[particle.id].length();
+            let speed_scale = speed / (sim.speed_limit * sim.particle_size * time.delta_secs());
+            max_speed = max_speed.max(speed_scale);
+            let rgb = COLD + speed_scale * SPEED_DIFF;
+            Color::linear_rgb(rgb.x, rgb.y, rgb.z)
         };
+        
         commands.entity(entity).insert(Sprite {
             custom_size: Some(Vec2::splat(sim.particle_size)),
             color,
@@ -135,17 +146,14 @@ fn update_particles(
         });
     });
 
+    sim.debug(format!("max speed: {max_speed}"));
+
     sim.end_frame();
 }
 
-fn update_fps(diagnostics: Res<DiagnosticsStore>, mut query: Query<&mut TextSpan, With<FpsText>>) {
+fn update_fps(mut query: Query<&mut TextSpan, With<FpsText>>, time: Res<Time>) {
     for mut span in &mut query {
-        if let Some(fps) = diagnostics.get(&FrameTimeDiagnosticsPlugin::FPS) {
-            if let Some(value) = fps.smoothed() {
-                // Update the value of the second section
-                **span = format!("{value:.1}");
-            }
-        }
+        **span = format!("{:.1}", 1.0 / time.delta_secs());
     }
 }
 
@@ -159,8 +167,9 @@ fn draw_debug_info(mut gizmos: Gizmos, particle_query: Query<(&Transform, &Parti
         });
     }
     if sim.debug.show_smoothing_radius {
-        let (transform, _) = particle_query.iter().next().unwrap();
-        gizmos.circle_2d(transform.translation.xy(), sim.smoothing_radius, LIME);
+        gizmos.circle_2d(sim.positions[0], sim.smoothing_radius, LIME);
+    }
+    if sim.debug.show_region_grid {
         let bottom = -sim.half_bounds_size.y;
         let left = -sim.half_bounds_size.x;
         for row in 0..sim.region_rows {
@@ -214,7 +223,7 @@ impl KeyboardCommands {
         kb_cmds.add_command(KeyCode::Digit1, 500, |sim, _, _, _| sim.set_frames_to_show(1));
         // A: toggle velocity arrows
         kb_cmds.add_command(KeyCode::KeyA, 250, |sim, _, _, _| sim.toggle_arrows());
-        // C: toggle smoothing radius circle.
+        // C: toggle display of smoothing radius circle.
         kb_cmds.add_command(KeyCode::KeyC, 250, |sim, _, _, _| sim.toggle_smoothing_radius());
         // G: increase/decrease gravity
         kb_cmds.add_command(KeyCode::KeyG, 50, |sim, shift, _, _| {
@@ -266,6 +275,8 @@ impl KeyboardCommands {
                 });
             }
         });
+        // X: toggle region grid
+        kb_cmds.add_command(KeyCode::KeyX, 250, |sim, _, _, _| sim.toggle_region_grid());
 
         kb_cmds
     }
@@ -347,7 +358,7 @@ fn handle_mouse_clicks(
         return;
     };
 
-    sim.interaction_input_strength = if left_click { -300.0 } else { 300.0 };
+    sim.interaction_input_strength = if left_click { -200.0 } else { 200.0 };
     sim.interaction_input_point = point;
 }
 
