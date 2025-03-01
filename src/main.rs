@@ -91,7 +91,6 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
             right: Val::Px(5.0),
             ..default()
         },
-
     ));
 
     commands.spawn(KeyboardCommands::new());
@@ -115,30 +114,25 @@ fn update_particles(
     particle_query.iter_mut().for_each(|(entity, mut transform, particle)| {
         transform.translation.x = sim.positions[particle.id].x;
         transform.translation.y = sim.positions[particle.id].y;
-        if particle.watched {
-            commands
-                .entity(entity)
-                .insert(MeshMaterial2d(materials.add(Color::linear_rgb(1.0, 1.0, 0.0))));
+        let color = if particle.watched {
+            Color::linear_rgb(1.0, 1.0, 0.0)
         } else if sim.debug.use_heatmap {
-            let color = if sim.densities[particle.id].0 < sim.target_density {
+            let rgb = if sim.densities[particle.id].0 < sim.target_density {
                 let density_scale = sim.densities[particle.id].0 / sim.target_density;
                 COLD + density_scale * COLD_DIFF
             } else {
                 let density_scale = (sim.densities[particle.id].0 - sim.target_density) / sim.target_density;
                 NEUTRAL + density_scale.min(4.0) / 4.0 * WARM_DIFF
             };
-            commands.entity(entity).insert(Sprite {
-                custom_size: Some(Vec2::splat(sim.particle_size)),
-                color: Color::linear_rgb(color.x, color.y, color.z),
-                ..Default::default()
-            });
+            Color::linear_rgb(rgb.x, rgb.y, rgb.z)
         } else {
-            commands.entity(entity).insert(Sprite {
-                custom_size: Some(Vec2::splat(sim.particle_size)),
-                color: Color::linear_rgb(0.0, 0.0, 0.5),
-                ..Default::default()
-            });
-        }
+            Color::linear_rgb(0.0, 0.0, 0.5)
+        };
+        commands.entity(entity).insert(Sprite {
+            custom_size: Some(Vec2::splat(sim.particle_size)),
+            color,
+            ..Default::default()
+        });
     });
 
     sim.end_frame();
@@ -260,8 +254,12 @@ impl KeyboardCommands {
                 particle_query.par_iter_mut().for_each(|(transform, mut particle)| {
                     if (transform.translation.xy() - cursor_pos).length() <= sim.particle_size / 2.0 {
                         println!(
-                            "Watching particle {} @({},{}) density={}",
-                            particle.id, transform.translation.x, transform.translation.y, sim.densities[particle.id].0
+                            "Watching particle {} @({},{}) density={}, velocity={:?}",
+                            particle.id,
+                            transform.translation.x,
+                            transform.translation.y,
+                            sim.densities[particle.id].0,
+                            sim.velocities[particle.id]
                         );
                         particle.watched = true;
                     }
