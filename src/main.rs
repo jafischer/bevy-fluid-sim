@@ -9,7 +9,6 @@ use std::time::{Duration, Instant};
 
 use bevy::color::palettes::basic::*;
 use bevy::color::palettes::css::GOLD;
-use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResized, WindowResolution};
 
@@ -38,7 +37,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }),
                 ..default()
             }),
-            FrameTimeDiagnosticsPlugin,
         ))
         .insert_resource(Time::<Fixed>::from_hz(128.0))
         .add_systems(Startup, setup)
@@ -140,7 +138,7 @@ fn update_particles(
         };
         
         commands.entity(entity).insert(Sprite {
-            custom_size: Some(Vec2::splat(sim.particle_size)),
+            custom_size: Some(Vec2::splat(sim.particle_size * ARGS.sprite_size)),
             color,
             ..Default::default()
         });
@@ -261,7 +259,7 @@ impl KeyboardCommands {
                     .for_each(|(_, mut particle)| particle.watched = false);
             } else {
                 particle_query.par_iter_mut().for_each(|(transform, mut particle)| {
-                    if (transform.translation.xy() - cursor_pos).length() <= sim.particle_size / 2.0 {
+                    if (transform.translation.xy() - cursor_pos).length() <= sim.particle_size {
                         println!(
                             "Watching particle {} @({},{}) density={}, velocity={:?}",
                             particle.id,

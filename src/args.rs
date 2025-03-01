@@ -29,9 +29,15 @@ pub struct Args {
     pub near_pressure_multiplier: u32,
     #[arg(long, default_value = "0.25")]
     pub collision_damping: f32,
-    /// Radius of the area-of-affect for mouse clicks, as a number of particles.
-    #[arg(long, default_value = "20")]
+    /// Radius of the area-of-affect for mouse clicks, as a factor of particle size.
+    #[arg(long, default_value = "30")]
     pub interaction_input_radius: u16,
+    /// Size of the particle sprite, relative to particle size.
+    #[arg(long, default_value = "2.0")]
+    pub sprite_size: f32,
+    /// Speed limit (for fake viscosity), as a factor of particle size.
+    #[arg(long, default_value = "30.0")]
+    pub speed_limit: f32,
 }
 
 pub static ARGS: Lazy<Args> = Lazy::new(Args::parse);

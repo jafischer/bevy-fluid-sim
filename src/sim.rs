@@ -120,7 +120,7 @@ impl Simulation {
             target_density: 1.5 / scale,
             pressure_multiplier: ARGS.pressure_multiplier as f32,
             near_pressure_multiplier: ARGS.near_pressure_multiplier as f32,
-            speed_limit: 50.0,
+            speed_limit: ARGS.speed_limit,
             collision_damping: ARGS.collision_damping,
 
             interaction_input_strength: 0.0,
@@ -175,7 +175,7 @@ impl Simulation {
             commands.spawn((
                 Sprite {
                     color,
-                    custom_size: Some(Vec2::splat(self.particle_size)),
+                    custom_size: Some(Vec2::splat(self.particle_size * ARGS.sprite_size)),
                     ..Default::default()
                 },
                 particle,
@@ -256,6 +256,8 @@ impl Simulation {
     }
 
     fn calculate_densities(&mut self) {
+        // Amazing that .into_par_iter() ... .collect() preserves order (but I've verified that it
+        // does).
         self.densities = (0..self.num_particles)
             .into_par_iter()
             .map(|i| self.density(i))
