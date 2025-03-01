@@ -159,8 +159,6 @@ impl Simulation {
     pub fn spawn_particles(
         &mut self,
         commands: &mut Commands,
-        meshes: &mut ResMut<Assets<Mesh>>,
-        materials: &mut ResMut<Assets<ColorMaterial>>,
     ) {
         let color = Color::linear_rgb(0.0, 0.3, 1.0);
 
@@ -254,9 +252,10 @@ impl Simulation {
     }
 
     fn calculate_densities(&mut self) {
-        for i in 0..self.num_particles {
-            self.densities[i] = self.density(i);
-        }
+        self.densities = (0..self.num_particles)
+            .into_par_iter()
+            .map(|i| self.density(i))
+            .collect();
 
         if self.debug.log_frame == self.debug.current_frame {
             let lowest_density = self
@@ -274,9 +273,9 @@ impl Simulation {
                 .unwrap();
             let average_density =
                 self.densities.iter().map(|(density, _)| *density).sum::<f32>() / self.num_particles as f32;
-            self.debug(format!("lowest density: {lowest_density}"));
-            self.debug(format!("highest density: {highest_density}"));
-            self.debug(format!("average density: {average_density}"));
+            println!("lowest density: {lowest_density}");
+            println!("highest density: {highest_density}");
+            println!("average density: {average_density}");
         }
     }
 
@@ -327,6 +326,8 @@ impl Simulation {
             // Poor man's viscosity:
             if self.debug.use_viscosity {
                 velocity = (velocity + pressure_force).clamp_length_max(30.0 * self.particle_size * delta);
+            } else {
+                velocity += pressure_force;
             }
             velocity += gravity_force;
         } else {
@@ -356,7 +357,9 @@ impl Simulation {
     }
 
     pub fn end_frame(&mut self) {
-        self.debug(format!("{self:?}"));
+        if self.debug.log_frame == self.debug.current_frame {
+            println!("{self:?}");
+        }
         self.debug.current_frame += 1;
         if self.debug.frames_to_show > 0 {
             self.debug.frames_to_show -= 1;
