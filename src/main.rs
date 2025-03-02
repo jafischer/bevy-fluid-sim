@@ -19,6 +19,13 @@ use crate::sim::Simulation;
 #[derive(Component)]
 struct FpsText;
 
+#[derive(Component)]
+struct MessageText {
+    pub text: Option<String>,
+    pub end_time: Instant,
+}
+
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let win_size: Vec<_> = ARGS.win.split(',').collect();
     if win_size.len() != 2 {
@@ -42,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_systems(Startup, setup)
         .add_systems(
             Update,
-            (update_particles, draw_debug_info, handle_keypress, handle_mouse_clicks, on_resize, update_fps),
+            (update_particles, draw_debug_info, handle_keypress, handle_mouse_clicks, on_resize, update_fps, display_message),
         )
         .run();
 
@@ -51,8 +58,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn setup(mut commands: Commands, window: Single<&Window>) {
     let mut sim = Simulation::new(window.width(), window.height());
-
-    commands.spawn((Camera2d, Transform::from_scale(Vec3::splat(sim.scale))));
+    let scale = sim.scale;
+    commands.spawn((Camera2d, Transform::from_scale(Vec3::splat(scale))));
     sim.spawn_particles(&mut commands);
     commands.spawn(sim);
 
@@ -80,7 +87,7 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
     commands.spawn((
         Text::new(format!("{} particles", ARGS.num)),
         TextFont {
-            font_size: 14.0,
+            font_size: 16.0,
             ..default()
         },
         // Set the justification of the Text
@@ -91,12 +98,26 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
             ..default()
         },
     ));
+    // Demonstrate changing rotation
+    commands.spawn((
+        Text2d::default(),
+        TextFont {
+            font_size: 30.0,
+            ..default()
+        },
+        TextLayout::new_with_justify(JustifyText::Center),
+        Transform::from_scale(Vec3::splat(scale)).with_translation(Vec3::new(0.0, 2.0, 1.0)),
+        MessageText {
+            text: None,
+            end_time: Instant::now(),
+        },
+    ));
 
     commands.spawn(KeyboardCommands::new());
 }
 
-const COLD: Vec3 = Vec3::new(0.0, 0.0, 0.2);
-const NEUTRAL: Vec3 = Vec3::new(0.5, 0.5, 1.0);
+const COLD: Vec3 = Vec3::new(0.0, 0.0, 1.0);
+const NEUTRAL: Vec3 = Vec3::new(0.0, 0.0, 0.5);
 const HOT: Vec3 = Vec3::new(1.0, 0.0, 0.0);
 const COLD_DIFF: Vec3 = Vec3::new(NEUTRAL.x - COLD.x, NEUTRAL.y - COLD.y, NEUTRAL.z - COLD.z);
 const WARM_DIFF: Vec3 = Vec3::new(HOT.x - NEUTRAL.x, HOT.y - NEUTRAL.y, HOT.z - NEUTRAL.z);
@@ -136,7 +157,7 @@ fn update_particles(
             let rgb = COLD + speed_scale * SPEED_DIFF;
             Color::linear_rgb(rgb.x, rgb.y, rgb.z)
         };
-        
+
         commands.entity(entity).insert(Sprite {
             custom_size: Some(Vec2::splat(sim.particle_size * ARGS.sprite_size)),
             color,
@@ -152,6 +173,20 @@ fn update_particles(
 fn update_fps(mut query: Query<&mut TextSpan, With<FpsText>>, time: Res<Time>) {
     for mut span in &mut query {
         **span = format!("{:.1}", 1.0 / time.delta_secs());
+    }
+}
+
+fn display_message(mut query: Query<(&mut Text2d, &mut MessageText)>) {
+    for (mut text, mut message_text) in &mut query {
+        if let Some(msg_text) = message_text.text.as_ref() {
+            let duration = Instant::now().duration_since(message_text.end_time);
+            if !duration.is_zero() {
+                message_text.text = None;
+                **text = String::new();
+            } else {
+                **text = msg_text.to_string();
+            }
+        }
     }
 }
 
@@ -195,6 +230,7 @@ type KeyboardAction = fn(
     // current mouse cursor position
     &Vec2,
     particle_query: &mut Query<(&mut Transform, &mut Particle)>,
+    message_text: &mut Single<&mut MessageText>,
 );
 
 #[derive(Component)]
@@ -209,7 +245,7 @@ impl KeyboardCommands {
         };
 
         // Space: freeze / unfreeze particle motion.
-        kb_cmds.add_command(KeyCode::Space, 250, |sim, _, _, _| {
+        kb_cmds.add_command(KeyCode::Space, 250, |sim, _, _, _, _| {
             if sim.frames_to_advance() == 0 {
                 sim.set_frames_to_show(u32::MAX);
             } else {
@@ -218,41 +254,62 @@ impl KeyboardCommands {
         });
 
         // 1: advance 1 frames.
-        kb_cmds.add_command(KeyCode::Digit1, 500, |sim, _, _, _| sim.set_frames_to_show(1));
+        kb_cmds.add_command(KeyCode::Digit1, 500, |sim, _, _, _, _| sim.set_frames_to_show(1));
         // A: toggle velocity arrows
-        kb_cmds.add_command(KeyCode::KeyA, 250, |sim, _, _, _| sim.toggle_arrows());
+        kb_cmds.add_command(KeyCode::KeyA, 250, |sim, _, _, _, _| sim.toggle_arrows());
         // C: toggle display of smoothing radius circle.
-        kb_cmds.add_command(KeyCode::KeyC, 250, |sim, _, _, _| sim.toggle_smoothing_radius());
+        kb_cmds.add_command(KeyCode::KeyC, 250, |sim, _, _, _, _| sim.toggle_smoothing_radius());
         // G: increase/decrease gravity
-        kb_cmds.add_command(KeyCode::KeyG, 50, |sim, shift, _, _| {
+        kb_cmds.add_command(KeyCode::KeyG, 50, |sim, shift, _, _, msg| {
             if shift {
                 sim.adj_gravity(-0.5);
             } else {
                 sim.adj_gravity(0.5);
             }
+            msg.text = Some(format!("Gravity: {:.1}", sim.gravity.y));
+            msg.end_time = Instant::now() + Duration::from_secs(1);
         });
         // H: toggle heat map
-        kb_cmds.add_command(KeyCode::KeyH, 250, |sim, _, _, _| sim.toggle_heatmap());
+        kb_cmds.add_command(KeyCode::KeyH, 250, |sim, _, _, _, msg| {
+            sim.toggle_heatmap();
+            if sim.debug.use_heatmap {
+                msg.text = Some("Density heatmap".into());
+                msg.end_time = Instant::now() + Duration::from_secs(1);
+            } else {
+                msg.text = Some("Velocity heatmap".into());
+                msg.end_time = Instant::now() + Duration::from_secs(1);
+            }
+        });
         // I: toggle inertia (see sim.calculate_pressure()).
-        kb_cmds.add_command(KeyCode::KeyI, 250, |sim, _, _, _| sim.toggle_inertia());
+        kb_cmds.add_command(KeyCode::KeyI, 250, |sim, _, _, _, msg| {
+            sim.toggle_inertia();
+            msg.text = Some(format!("Inertia {}", if sim.debug.use_inertia { "on" } else { "off" }));
+            msg.end_time = Instant::now() + Duration::from_secs(1);
+        });
         // L: log debug info in the next frame
-        kb_cmds.add_command(KeyCode::KeyL, 250, |sim, _, _, _| sim.log_next_frame());
+        kb_cmds.add_command(KeyCode::KeyL, 250, |sim, _, _, _, _| sim.log_next_frame());
         // R: reset the simulation
-        kb_cmds.add_command(KeyCode::KeyR, 250, |sim, _, _, _| sim.reset());
+        kb_cmds.add_command(KeyCode::KeyR, 250, |sim, _, _, _, _| sim.reset());
         // I: toggle inertia (see sim.calculate_pressure()).
-        kb_cmds.add_command(KeyCode::KeyV, 250, |sim, _, _, _| sim.toggle_viscosity());
+        kb_cmds.add_command(KeyCode::KeyV, 250, |sim, _, _, _, msg| {
+            sim.toggle_viscosity();
+            msg.text = Some(format!("Viscosity {}", if sim.debug.use_viscosity { "on" } else { "off" }));
+            msg.end_time = Instant::now() + Duration::from_secs(1);
+        });
 
         // S: increase/decrease smoothing radius.
-        kb_cmds.add_command(KeyCode::KeyS, 50, |sim, shift, _, _| {
+        kb_cmds.add_command(KeyCode::KeyS, 50, |sim, shift, _, _, msg| {
             if shift {
                 sim.adj_smoothing_radius(0.01);
             } else {
                 sim.adj_smoothing_radius(-0.01);
             }
+            msg.text = Some(format!("Smoothing radius: {:.2}", sim.smoothing_radius));
+            msg.end_time = Instant::now() + Duration::from_secs(1);
         });
         // W: "watch" the particle(s) under the cursor (color them yellow).
         // Shift-W: clear all watched particles.
-        kb_cmds.add_command(KeyCode::KeyW, 250, |sim, shift, cursor_pos, particle_query| {
+        kb_cmds.add_command(KeyCode::KeyW, 250, |sim, shift, cursor_pos, particle_query, _| {
             if shift {
                 particle_query
                     .par_iter_mut()
@@ -274,7 +331,7 @@ impl KeyboardCommands {
             }
         });
         // X: toggle region grid
-        kb_cmds.add_command(KeyCode::KeyX, 250, |sim, _, _, _| sim.toggle_region_grid());
+        kb_cmds.add_command(KeyCode::KeyX, 250, |sim, _, _, _, _| sim.toggle_region_grid());
 
         kb_cmds
     }
@@ -299,6 +356,7 @@ fn handle_keypress(
     mut particle_query: Query<(&mut Transform, &mut Particle)>,
     window: Single<&Window>,
     mut kb_cmds: Single<&mut KeyboardCommands>,
+    mut message_text: Single<&mut MessageText>,
 ) {
     // Esc / Q: quit the app
     if kb.pressed(KeyCode::Escape) || kb.pressed(KeyCode::KeyQ) {
@@ -326,6 +384,7 @@ fn handle_keypress(
                     kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight),
                     &cursor_pos,
                     &mut particle_query,
+                    &mut message_text
                 );
             }
         }
