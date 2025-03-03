@@ -167,8 +167,7 @@ fn update_particles(
         .iter()
         .map(|row| row.iter().map(|cell| cell.len()).max().unwrap_or(0))
         .max()
-        .unwrap_or(0)
-        as f32;
+        .unwrap_or(0) as f32;
     if sim.debug.show_region_grid {
         for row in 0..sim.region_rows {
             for col in 0..sim.region_cols {

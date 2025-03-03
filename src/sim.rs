@@ -1,5 +1,6 @@
 use std::f32::consts::PI;
 use std::fmt::{Debug, Formatter};
+
 use bevy::prelude::*;
 use rand::random;
 use rayon::prelude::*;
@@ -120,7 +121,7 @@ impl Simulation {
             gravity: Vec2::new(0.0, -ARGS.gravity),
             target_density: 1.5 / scale,
             pressure_multiplier: ARGS.pressure_multiplier as f32,
-            near_pressure_multiplier: 100.0,// TODO: ARGS.near_pressure_multiplier as f32,
+            near_pressure_multiplier: 100.0, // TODO: ARGS.near_pressure_multiplier as f32,
             speed_limit: ARGS.speed_limit,
             collision_damping: ARGS.collision_damping,
 
@@ -164,10 +165,7 @@ impl Simulation {
         sim
     }
 
-    pub fn spawn_particles(
-        &mut self,
-        commands: &mut Commands,
-    ) {
+    pub fn spawn_particles(&mut self, commands: &mut Commands) {
         let color = Color::linear_rgb(0.3, 0.5, 1.0);
 
         self.place_particles();
@@ -424,7 +422,8 @@ impl Simulation {
                         }
                         if distance == 0.0 {
                             // Move toward the center, plus a random vector.
-                            gradient += (Vec2::new(random::<f32>() - 0.5, random::<f32>() - 0.5) + (Vec2::ZERO - position))
+                            gradient += (Vec2::new(random::<f32>() - 0.5, random::<f32>() - 0.5)
+                                + (Vec2::ZERO - position))
                                 * self.particle_size;
 
                             continue;
@@ -469,7 +468,7 @@ impl Simulation {
     // The following functions are translated from the Fluid-Sim shader code, but I've not
     // yet switched to using it.
     //
-    
+
     fn smoothing_kernel_poly6(&self, dst: f32) -> f32 {
         if dst < self.smoothing_radius {
             let v: f32 = self.smoothing_radius * self.smoothing_radius - dst * dst;

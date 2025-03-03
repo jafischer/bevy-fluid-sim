@@ -1,11 +1,13 @@
-use crate::particle::Particle;
-use crate::sim::Simulation;
-use crate::{MessageText, Messages};
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
+
 use bevy::app::AppExit;
 use bevy::input::ButtonInput;
 use bevy::prelude::*;
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
+
+use crate::particle::Particle;
+use crate::sim::Simulation;
+use crate::{MessageText, Messages};
 
 /// Defines a keyboard command to associate with a keypress.
 /// Each command can have a different repeat rate.
@@ -226,7 +228,7 @@ fn toggle_grid(
     _cursor_pos: &Vec2,
     _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
     msgs: &mut Single<&mut Messages>,
-){
+) {
     sim.toggle_region_grid();
     if sim.debug.show_region_grid {
         msgs.messages.push(MessageText {
