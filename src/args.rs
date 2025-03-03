@@ -32,6 +32,9 @@ pub struct Args {
     /// Radius of the area-of-affect for mouse clicks, as a factor of particle size.
     #[arg(long, default_value = "30")]
     pub interaction_input_radius: u16,
+    /// Strength of the attraction/repulsion when mouse is clicked.
+    #[arg(long, default_value = "200.0")]
+    pub interaction_input_strength: f32,
     /// Size of the particle sprite, relative to particle size.
     #[arg(long, default_value = "2.0")]
     pub sprite_size: f32,

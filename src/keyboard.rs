@@ -1,12 +1,14 @@
-use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use crate::particle::Particle;
+use crate::sim::Simulation;
+use crate::{MessageText, Messages};
 use bevy::app::AppExit;
 use bevy::input::ButtonInput;
 use bevy::prelude::*;
-use crate::{MessageText, Messages};
-use crate::particle::Particle;
-use crate::sim::Simulation;
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
+/// Defines a keyboard command to associate with a keypress.
+/// Each command can have a different repeat rate.
 pub struct KeyboardCommand {
     pub description: String,
     pub last_action_time: Instant,
@@ -14,23 +16,26 @@ pub struct KeyboardCommand {
     pub action: KeyboardAction,
 }
 
+/// The function that invokes the keyboard action.
+/// The parameters are a mishmash of things I just happened to need in the various actions.
 type KeyboardAction = fn(
-    &mut Simulation,
+    sim: &mut Simulation,
     // true == shift is pressed
-    bool,
+    shift: bool,
     // current mouse cursor position
-    &Vec2,
+    cursor_pos: &Vec2,
     particle_query: &mut Query<(&mut Transform, &mut Particle)>,
     messages: &mut Single<&mut Messages>,
 );
 
+/// Contains the collection of keyboard commands.
 #[derive(Component)]
 pub struct KeyboardCommands {
     pub commands: HashMap<KeyCode, KeyboardCommand>,
 }
 
 impl KeyboardCommands {
-    pub fn new() -> Self {
+    pub fn create() -> Self {
         let mut kb_cmds = KeyboardCommands {
             commands: HashMap::new(),
         };
@@ -49,108 +54,26 @@ impl KeyboardCommands {
         // A: toggle velocity arrows
         // kb_cmds.add_command(KeyCode::KeyA, "Toggle velocity arrows", 250, |sim, _, _, _, _| sim.toggle_arrows());
         // C: toggle display of smoothing radius circle.
-        kb_cmds.add_command(KeyCode::KeyC, "Draw smoothing radius around particle 0", 250, |sim, _, _, _, _| {
+        kb_cmds.add_command(KeyCode::KeyC, "Show smoothing radius around particle 0", 250, |sim, _, _, _, _| {
             sim.toggle_smoothing_radius()
         });
         // G: increase/decrease gravity
-        kb_cmds.add_command(KeyCode::KeyG, "Decrease gravity (shift: increase)", 50, |sim, shift, _, _, msgs| {
-            if shift {
-                sim.adj_gravity(-0.5);
-            } else {
-                sim.adj_gravity(0.5);
-            }
-            msgs.messages.push(MessageText {
-                text: Some(format!("Gravity: {:.1}", sim.gravity.y)),
-                start_time: Instant::now(),
-                duration: Duration::from_secs(1),
-            });
-        });
+        kb_cmds.add_command(KeyCode::KeyG, "Decrease gravity (shift: increase)", 50, adj_gravity);
         // H: toggle heat map
-        kb_cmds.add_command(KeyCode::KeyH, "Toggle heatmap", 250, |sim, _, _, _, msgs| {
-            sim.toggle_heatmap();
-            if sim.debug.use_heatmap {
-                msgs.messages.push(MessageText {
-                    text: Some("Density heatmap".into()),
-                    start_time: Instant::now(),
-                    duration: Duration::from_secs(1),
-                });
-            } else {
-                msgs.messages.push(MessageText {
-                    text: Some("Velocity heatmap".into()),
-                    start_time: Instant::now(),
-                    duration: Duration::from_secs(1),
-                });
-            }
-        });
-        // I: toggle inertia (see sim.calculate_pressure()).
-        kb_cmds.add_command(KeyCode::KeyI, "Toggle inertia", 250, |sim, _, _, _, msgs| {
-            sim.toggle_inertia();
-            msgs.messages.push(MessageText {
-                text: Some(format!("Inertia {}", if sim.debug.use_inertia { "on" } else { "off" })),
-                start_time: Instant::now(),
-                duration: Duration::from_secs(1),
-            });
-        });
+        kb_cmds.add_command(KeyCode::KeyH, "Toggle heatmap", 250, toggle_heatmap);
+        // I: toggle inertia
+        kb_cmds.add_command(KeyCode::KeyI, "Toggle inertia", 250, toggle_inertia);
         // L: log debug info in the next frame
         kb_cmds.add_command(KeyCode::KeyL, "Log debug info", 250, |sim, _, _, _, _| sim.log_next_frame());
         // R: reset the simulation
         kb_cmds.add_command(KeyCode::KeyR, "Reset particles", 250, |sim, _, _, _, _| sim.reset());
-        // I: toggle inertia (see sim.calculate_pressure()).
-        kb_cmds.add_command(KeyCode::KeyV, "Toggle inertia", 250, |sim, _, _, _, msgs| {
-            sim.toggle_viscosity();
-            msgs.messages.push(MessageText {
-                text: Some(format!("Viscosity {}", if sim.debug.use_viscosity { "on" } else { "off" })),
-                start_time: Instant::now(),
-                duration: Duration::from_secs(1),
-            });
-        });
-
+        // V: toggle viscosity
+        kb_cmds.add_command(KeyCode::KeyV, "Toggle inertia", 250, toggle_viscosity);
         // S: increase/decrease smoothing radius.
-        kb_cmds.add_command(
-            KeyCode::KeyS,
-            "Decrease smoothing radius (shift: increase)",
-            50,
-            |sim, shift, _, _, msgs| {
-                if shift {
-                    sim.adj_smoothing_radius(0.01);
-                } else {
-                    sim.adj_smoothing_radius(-0.01);
-                }
-                msgs.messages.push(MessageText {
-                    text: Some(format!("Smoothing radius: {:.2}", sim.smoothing_radius)),
-                    start_time: Instant::now(),
-                    duration: Duration::from_secs(1),
-                });
-            },
-        );
+        kb_cmds.add_command(KeyCode::KeyS, "Decrease smoothing radius (shift: increase)", 50, adj_smoothing_radius);
         // W: "watch" the particle(s) under the cursor (color them yellow).
         // Shift-W: clear all watched particles.
-        kb_cmds.add_command(
-            KeyCode::KeyW,
-            "Watch (highlight) particle under cursor",
-            250,
-            |sim, shift, cursor_pos, particle_query, _| {
-                if shift {
-                    particle_query
-                        .par_iter_mut()
-                        .for_each(|(_, mut particle)| particle.watched = false);
-                } else {
-                    particle_query.par_iter_mut().for_each(|(transform, mut particle)| {
-                        if (transform.translation.xy() - cursor_pos).length() <= sim.particle_size {
-                            println!(
-                                "Watching particle {} @({},{}) density={}, velocity={:?}",
-                                particle.id,
-                                transform.translation.x,
-                                transform.translation.y,
-                                sim.densities[particle.id].0,
-                                sim.velocities[particle.id]
-                            );
-                            particle.watched = true;
-                        }
-                    });
-                }
-            },
-        );
+        kb_cmds.add_command(KeyCode::KeyW, "Watch (highlight) particle under cursor", 250, watch_particle);
         // X: toggle region grid
         kb_cmds.add_command(KeyCode::KeyX, "Display region grid", 500, |sim, _, _, _, _| sim.toggle_region_grid());
 
@@ -167,6 +90,125 @@ impl KeyboardCommands {
                 action,
             },
         );
+    }
+}
+
+fn adj_gravity(
+    sim: &mut Simulation,
+    shift: bool,
+    _cursor_pos: &Vec2,
+    _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
+    msgs: &mut Single<&mut Messages>,
+) {
+    if shift {
+        sim.adj_gravity(-0.5);
+    } else {
+        sim.adj_gravity(0.5);
+    }
+    msgs.messages.push(MessageText {
+        text: Some(format!("Gravity: {:.1}", sim.gravity.y)),
+        start_time: Instant::now(),
+        duration: Duration::from_secs(1),
+    });
+}
+
+fn toggle_heatmap(
+    sim: &mut Simulation,
+    _shift: bool,
+    _cursor_pos: &Vec2,
+    _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
+    msgs: &mut Single<&mut Messages>,
+) {
+    sim.toggle_heatmap();
+    if sim.debug.use_heatmap {
+        msgs.messages.push(MessageText {
+            text: Some("Density heatmap".into()),
+            start_time: Instant::now(),
+            duration: Duration::from_secs(1),
+        });
+    } else {
+        msgs.messages.push(MessageText {
+            text: Some("Velocity heatmap".into()),
+            start_time: Instant::now(),
+            duration: Duration::from_secs(1),
+        });
+    }
+}
+
+fn toggle_inertia(
+    sim: &mut Simulation,
+    _shift: bool,
+    _cursor_pos: &Vec2,
+    _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
+    msgs: &mut Single<&mut Messages>,
+) {
+    sim.toggle_inertia();
+    msgs.messages.push(MessageText {
+        text: Some(format!("Inertia {}", if sim.debug.use_inertia { "on" } else { "off" })),
+        start_time: Instant::now(),
+        duration: Duration::from_secs(1),
+    });
+}
+
+fn toggle_viscosity(
+    sim: &mut Simulation,
+    _shift: bool,
+    _cursor_pos: &Vec2,
+    _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
+    msgs: &mut Single<&mut Messages>,
+) {
+    sim.toggle_viscosity();
+    msgs.messages.push(MessageText {
+        text: Some(format!("Viscosity {}", if sim.debug.use_viscosity { "on" } else { "off" })),
+        start_time: Instant::now(),
+        duration: Duration::from_secs(1),
+    });
+}
+
+fn adj_smoothing_radius(
+    sim: &mut Simulation,
+    shift: bool,
+    _cursor_pos: &Vec2,
+    _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
+    msgs: &mut Single<&mut Messages>,
+) {
+    if shift {
+        sim.adj_smoothing_radius(0.01);
+    } else {
+        sim.adj_smoothing_radius(-0.01);
+    }
+    msgs.messages.push(MessageText {
+        text: Some(format!("Smoothing radius: {:.2}", sim.smoothing_radius)),
+        start_time: Instant::now(),
+        duration: Duration::from_secs(1),
+    });
+}
+
+fn watch_particle(
+    sim: &mut Simulation,
+    shift: bool,
+    cursor_pos: &Vec2,
+    particle_query: &mut Query<(&mut Transform, &mut Particle)>,
+    _msgs: &mut Single<&mut Messages>,
+) {
+    if shift {
+        particle_query
+            .par_iter_mut()
+            .for_each(|(_, mut particle)| particle.watched = false);
+    } else {
+        particle_query.par_iter_mut().for_each(|(transform, mut particle)| {
+            if (transform.translation.xy() - cursor_pos).length() <= sim.particle_size {
+                println!(
+                    "Watching particle {} @({},{}) density={}, velocity={:?}",
+                    particle.id,
+                    transform.translation.x,
+                    transform.translation.y,
+                    sim.densities[particle.id].0,
+                    sim.velocities[particle.id]
+                );
+                particle.watched = true;
+            }
+        });
     }
 }
 
