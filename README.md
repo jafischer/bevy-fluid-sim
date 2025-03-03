@@ -32,12 +32,12 @@ bevy feature. Therefore, running the app requires the following:
 ### Mac
 
 ```
-DYLD_FALLBACK_LIBRARY_PATH=$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/lib ./target/release/sph
+DYLD_FALLBACK_LIBRARY_PATH=$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/lib ./target/release/bevy-fluid-sim
 ```
 
 ### Windows
 
 ```
 PATH=%USERPROFILE%\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\;.\target\debug\deps\;.\target\release\deps
-.\target\release\sph.exe
+.\target\release\bevy-fluid-sim.exe
 ```

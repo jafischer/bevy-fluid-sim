@@ -5,4 +5,4 @@ releases/
 target/
 
 Cargo.lock
-sph-snapshot*
+snapshot*

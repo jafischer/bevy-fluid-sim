@@ -1,6 +1,6 @@
 [package]
-name = "sph"
-version = "0.1.0"
+name = "bevy-fluid-sim"
+version = "0.2.0"
 edition = "2021"
 
 # Enable a large amount of optimization in the dev profile for dependencies.
@@ -21,7 +21,7 @@ strip = "symbols"
 # DYLD_FALLBACK_LIBRARY_PATH=$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/lib:$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/lib
 # Where the path comes from `rustc --print=sysroot` (with /lib appended).
 # On Windows (as an example):
-# PATH=C:\Users\jafischer\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\;C:\Users\jafischer\mysrc\sph\target\debug\deps\;C:\Users\jafischer\mysrc\sph\target\release\deps
+# PATH=%USERPROFILE\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\;.\target\debug\deps\;.\target\release\deps
 bevy = { version = "0.15", features = ["dynamic_linking", "multi_threaded"] }
 #bevy = { version = "0.15", features = ["multi_threaded"] }
 # Command line arg processing.
