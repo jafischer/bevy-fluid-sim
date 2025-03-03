@@ -80,12 +80,13 @@ pub struct DebugParams {
 impl Simulation {
     pub fn new(window_width: f32, window_height: f32) -> Simulation {
         let num_particles = ARGS.num as usize;
-        // Pick a particle size such that the "fluid" will fill roughly 2/3 the window.
         let window_area = window_width * window_height;
+        // Pick a particle size such that the "fluid" will fill roughly 2/3 the window.
         let particle_size = (window_area * 0.67 / num_particles as f32).sqrt();
 
-        // Because Sebastian's kernel math blows up with smoothing radius values > 1, we don't want to use the
-        // actual window coordinates. In Sebastian's video, at 5:40, he shows a smoothing self.smoothing_radius of 0.5
+        // The kernel math blows up with smoothing radius values > 1, we don't want to use the
+        // actual window coordinates. So I'm just hacking up a scale factor for now.
+        // In Sebastian's video, at 5:40, he shows a smoothing radius of 0.5
         // that is about 12 particles wide:
         // (https://youtu.be/rSKMYc1CQHE?si=3sibErk0e4CYC5wF&t=340)
         // So we'll just scale down the grid size to 0.08333 (1/12).
@@ -134,6 +135,8 @@ impl Simulation {
             region_cols: 0,
             regions: vec![],
 
+            // I've copied some stuff from Sebastian's Fluid-Sim compute shader code, but haven't
+            // integrated it yet.
             predicted_positions,
             spatial_offsets,
             spatial_indices,
@@ -183,7 +186,7 @@ impl Simulation {
         }
     }
 
-    fn place_particles(&mut self) {
+    pub fn place_particles(&mut self) {
         let bounds = self.half_bounds_size * 0.8;
         for i in 0..self.num_particles {
             let x = -bounds.x + random::<f32>() * bounds.x * 2.0;
@@ -202,19 +205,10 @@ impl Simulation {
         }
     }
 
-    fn update_spatial_hash(&mut self) {
-        for id in 0..self.num_particles {
-            // Reset offsets
-            self.spatial_offsets[id] = self.num_particles as u32;
-            // Update index buffer
-            let index = id;
-            let cell = get_cell_2d(&self.predicted_positions[index], self.smoothing_radius);
-            let hash = hash_cell_2d(&cell);
-            let key = key_from_hash(hash, self.num_particles as u32);
-            self.spatial_indices[id] = [index as u32, hash, key];
-        }
-    }
-
+    /// This is my simplistic alternative to the funky "spatial hash" code.
+    /// I just divide the space up into regions the size of the smoothing hash, and
+    /// keep track of the particles in each region. Wasteful of memory, but it's simple and
+    /// it works.
     fn update_regions(&mut self) {
         let width = self.half_bounds_size.x * 2.0;
         let height = self.half_bounds_size.y * 2.0;
@@ -354,10 +348,6 @@ impl Simulation {
         self.resolve_collisions(id);
     }
 
-    pub fn reset(&mut self) {
-        self.place_particles();
-    }
-
     pub fn on_resize(&mut self, window_width: f32, window_height: f32) {
         self.half_bounds_size = Vec2::new(window_width, window_height) * self.scale / 2.0 - self.particle_size / 2.0;
     }
@@ -370,62 +360,6 @@ impl Simulation {
         if self.debug.frames_to_show > 0 {
             self.debug.frames_to_show -= 1;
         }
-    }
-
-    pub fn frames_to_advance(&self) -> u32 {
-        self.debug.frames_to_show
-    }
-
-    pub fn set_frames_to_show(&mut self, val: u32) {
-        self.debug.frames_to_show = val;
-    }
-
-    pub fn debug(&self, message: String) {
-        if self.debug.log_frame == self.debug.current_frame {
-            println!("{message}");
-        }
-    }
-
-    pub fn toggle_arrows(&mut self) {
-        self.debug.show_arrows = !self.debug.show_arrows;
-    }
-
-    pub fn toggle_smoothing_radius(&mut self) {
-        self.debug.show_smoothing_radius = !self.debug.show_smoothing_radius;
-    }
-
-    pub fn toggle_region_grid(&mut self) {
-        self.debug.show_region_grid = !self.debug.show_region_grid;
-    }
-
-    pub fn toggle_heatmap(&mut self) {
-        self.debug.use_heatmap = !self.debug.use_heatmap;
-    }
-
-    pub fn toggle_inertia(&mut self) {
-        self.debug.use_inertia = !self.debug.use_inertia;
-        println!("inertia: {}", self.debug.use_inertia);
-    }
-
-    pub fn toggle_viscosity(&mut self) {
-        self.debug.use_viscosity = !self.debug.use_viscosity;
-        println!("viscosity: {}", self.debug.use_viscosity);
-    }
-
-    pub fn log_next_frame(&mut self) {
-        self.debug.log_frame = self.debug.current_frame + 1;
-    }
-
-    pub fn adj_smoothing_radius(&mut self, increment: f32) {
-        self.smoothing_radius = (self.smoothing_radius + increment).max(increment.abs());
-        self.smoothing_scaling_factor = 6.0 / (PI * self.smoothing_radius.powf(4.0));
-        self.smoothing_derivative_scaling_factor = PI * self.smoothing_radius.powf(4.0) / 6.0;
-        println!("smoothing_radius: {}", self.smoothing_radius);
-    }
-
-    pub fn adj_gravity(&mut self, increment: f32) {
-        self.gravity.y = (self.gravity.y + increment).min(0.0);
-        println!("gravity: {}", self.gravity);
     }
 
     fn smoothing_kernel(&self, distance: f32) -> f32 {
@@ -509,24 +443,33 @@ impl Simulation {
         gradient
     }
 
-    /// Divides a rectangular region into (roughly) n squares.
-    fn subdivide_into_squares(w: f32, h: f32, n: usize) -> (f32, usize, usize) {
-        // Step 1: Calculate the target area of each square
-        let target_area = (w * h) / n as f32;
+    fn external_forces(&self, pos: &Vec2, velocity: &Vec2) -> Vec2 {
+        // Input interactions modify gravity
+        if self.interaction_input_strength != 0.0 {
+            let input_point_offset = self.interaction_input_point - pos;
+            let sqr_dst = input_point_offset.dot(input_point_offset);
+            if sqr_dst < self.interaction_input_radius * self.interaction_input_radius {
+                let dst = sqr_dst.sqrt();
+                let edge_t = dst / self.interaction_input_radius;
+                let centre_t = 1.0 - edge_t;
+                let dir_to_centre = input_point_offset / dst;
 
-        // Step 2: Calculate the side length of each square
-        let side_length = target_area.sqrt();
+                let gravity_weight = 1.0 - (centre_t * (self.interaction_input_strength / 10.0).clamp(0.0, 1.0));
+                let mut accel =
+                    self.gravity * gravity_weight + dir_to_centre * centre_t * self.interaction_input_strength;
+                accel -= velocity * centre_t;
+                return accel * self.scale;
+            }
+        }
 
-        // Step 3: Calculate the number of columns and rows
-        let columns = w / side_length;
-        let rows = n as f32 / columns;
-
-        // Step 4: Adjust the final side length to fit evenly
-        let side_length = f32::min(w / columns, h / rows);
-
-        (side_length, columns as usize, rows as usize)
+        self.gravity * self.scale
     }
 
+    //
+    // The following functions are translated from the Fluid-Sim shader code, but I've not
+    // yet switched to using it.
+    //
+    
     fn smoothing_kernel_poly6(&self, dst: f32) -> f32 {
         if dst < self.smoothing_radius {
             let v: f32 = self.smoothing_radius * self.smoothing_radius - dst * dst;
@@ -640,25 +583,16 @@ impl Simulation {
         self.near_pressure_multiplier * near_density
     }
 
-    fn external_forces(&self, pos: &Vec2, velocity: &Vec2) -> Vec2 {
-        // Input interactions modify gravity
-        if self.interaction_input_strength != 0.0 {
-            let input_point_offset = self.interaction_input_point - pos;
-            let sqr_dst = input_point_offset.dot(input_point_offset);
-            if sqr_dst < self.interaction_input_radius * self.interaction_input_radius {
-                let dst = sqr_dst.sqrt();
-                let edge_t = dst / self.interaction_input_radius;
-                let centre_t = 1.0 - edge_t;
-                let dir_to_centre = input_point_offset / dst;
-
-                let gravity_weight = 1.0 - (centre_t * (self.interaction_input_strength / 10.0).clamp(0.0, 1.0));
-                let mut accel =
-                    self.gravity * gravity_weight + dir_to_centre * centre_t * self.interaction_input_strength;
-                accel -= velocity * centre_t;
-                return accel * self.scale;
-            }
+    fn update_spatial_hash(&mut self) {
+        for id in 0..self.num_particles {
+            // Reset offsets
+            self.spatial_offsets[id] = self.num_particles as u32;
+            // Update index buffer
+            let index = id;
+            let cell = get_cell_2d(&self.predicted_positions[index], self.smoothing_radius);
+            let hash = hash_cell_2d(&cell);
+            let key = key_from_hash(hash, self.num_particles as u32);
+            self.spatial_indices[id] = [index as u32, hash, key];
         }
-
-        self.gravity * self.scale
     }
 }

@@ -1,8 +1,8 @@
 mod args;
-mod digit_keys;
 mod particle;
 mod sim;
 mod spatial_hash;
+mod sim_settings;
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
