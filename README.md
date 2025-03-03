@@ -20,4 +20,24 @@ to give it a go in Rust using the [Bevy game engine](https://bevyengine.org/).
 ## Early Results
 
 After wrestling with it for a week or two, I've finally achieved something that
-looks... fluid adjacent.  
+looks... fluid adjacent.
+
+![fluid adjacent](./Screenshot%202025-03-02%20at%206.59.13%E2%80%AFPM.png).
+
+## Running
+
+To speed up compiling (world record understatement), I use the `dynamic_linking`
+bevy feature. Therefore, running the app requires the following:
+
+### Mac
+
+```
+DYLD_FALLBACK_LIBRARY_PATH=$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/lib ./target/release/sph
+```
+
+### Windows
+
+```
+PATH=%USERPROFILE%\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\;.\target\debug\deps\;.\target\release\deps
+.\target\release\sph.exe
+```
