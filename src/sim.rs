@@ -119,7 +119,7 @@ impl Simulation {
             gravity: Vec2::new(0.0, -ARGS.gravity),
             target_density: 1.5 / scale,
             pressure_multiplier: ARGS.pressure_multiplier as f32,
-            near_pressure_multiplier: ARGS.near_pressure_multiplier as f32,
+            near_pressure_multiplier: 100.0,// TODO: ARGS.near_pressure_multiplier as f32,
             speed_limit: ARGS.speed_limit,
             collision_damping: ARGS.collision_damping,
 

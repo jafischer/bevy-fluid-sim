@@ -11,23 +11,23 @@ pub struct Args {
 
     #[cfg(debug_assertions)]
     /// Number of particles
-    #[arg(long, default_value = "2000")]
+    #[arg(long, default_value = "10000")]
     pub num: u32,
     #[cfg(not(debug_assertions))]
     /// Number of particles
-    #[arg(long, default_value = "10000")]
+    #[arg(long, default_value = "50000")]
     pub num: u32,
     /// Initial smoothing radius (where 1.0 == a circle of approx 25 particles in diameter).
-    #[arg(long, default_value = "0.3")]
+    #[arg(long, default_value = "0.33")]
     pub smoothing_radius: f32,
     /// Initial gravity strength
-    #[arg(long, default_value = "2.0")]
+    #[arg(long, default_value = "1.5")]
     pub gravity: f32,
-    #[arg(long, default_value = "750")]
+    #[arg(long, default_value = "1000")]
     pub pressure_multiplier: u32,
-    #[arg(long, default_value = "25")]
-    pub near_pressure_multiplier: u32,
-    #[arg(long, default_value = "0.25")]
+    // #[arg(long, default_value = "25")]
+    // pub near_pressure_multiplier: u32,
+    #[arg(long, default_value = "0.5")]
     pub collision_damping: f32,
     /// Radius of the area-of-affect for mouse clicks, as a factor of particle size.
     #[arg(long, default_value = "30")]
