@@ -1,9 +1,9 @@
 mod args;
+mod keyboard;
 mod particle;
 mod sim;
-mod spatial_hash;
 mod sim_settings;
-mod keyboard;
+mod spatial_hash;
 
 use std::time::{Duration, Instant};
 
@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 handle_mouse_clicks,
                 on_resize,
                 update_fps,
-                display_message,
+                display_messages,
             ),
         )
         .run();
@@ -112,7 +112,7 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
             ..default()
         },
     ));
-    
+
     let mut messages = Messages { messages: vec![] };
     messages.messages.push(MessageText {
         text: Some("Left-click to attract, right-click to repel\n\nPress ? for keyboard commands".into()),
@@ -133,7 +133,7 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
     ));
 
     // Keyboard input
-    commands.spawn(KeyboardCommands::new());
+    commands.spawn(KeyboardCommands::create());
 }
 
 const COLD: Vec3 = Vec3::new(0.0, 0.0, 1.0);
@@ -146,46 +146,92 @@ const STOPPED: Vec3 = Vec3::new(0.0, 0.0, 0.2);
 const FAST: Vec3 = Vec3::new(0.5, 0.5, 1.0);
 const SPEED_DIFF: Vec3 = Vec3::new(FAST.x - STOPPED.x, FAST.y - STOPPED.y, FAST.z - STOPPED.z);
 
+const EMPTY: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+const FULL: Vec3 = Vec3::new(1.0, 1.0, 1.0);
+
 fn update_particles(
     mut commands: Commands,
     mut particle_query: Query<(Entity, &mut Transform, &mut Particle)>,
     time: Res<Time>,
     mut sim: Single<&mut Simulation>,
+    mut gizmos: Gizmos,
 ) {
     sim.update_particles(time.delta_secs());
 
     let mut max_speed: f32 = 0.0;
+    let mut region_drawn: Vec<bool> = vec![false; sim.region_cols * sim.region_rows];
+    let bottom = -sim.half_bounds_size.y;
+    let left = -sim.half_bounds_size.x;
+    let max_region_count = sim
+        .regions
+        .iter()
+        .map(|row| row.iter().map(|cell| cell.len()).max().unwrap_or(0))
+        .max()
+        .unwrap_or(0)
+        as f32;
+    if sim.debug.show_region_grid {
+        for row in 0..sim.region_rows {
+            for col in 0..sim.region_cols {
+                gizmos.rect_2d(
+                    Vec2::new(left + col as f32 * sim.smoothing_radius, bottom + row as f32 * sim.smoothing_radius),
+                    Vec2::splat(sim.smoothing_radius),
+                    GRAY,
+                );
+            }
+        }
+        sim.debug(format!("max_region_count: {max_region_count}"));
+    }
 
     particle_query.iter_mut().for_each(|(entity, mut transform, particle)| {
-        transform.translation.x = sim.positions[particle.id].x;
-        transform.translation.y = sim.positions[particle.id].y;
-        let color = if particle.watched {
-            Color::linear_rgb(1.0, 1.0, 0.0)
-        } else if sim.debug.use_heatmap {
-            let rgb = if sim.densities[particle.id].0 < sim.target_density {
-                let density_scale = sim.densities[particle.id].0 / sim.target_density;
-                COLD + density_scale * COLD_DIFF
+        if sim.debug.show_region_grid {
+            let row = ((sim.positions[particle.id].y - bottom) / sim.smoothing_radius) as usize;
+            let col = ((sim.positions[particle.id].x - left) / sim.smoothing_radius) as usize;
+            if !region_drawn[row * sim.region_cols + col] {
+                transform.translation.x = left + col as f32 * sim.smoothing_radius;
+                transform.translation.y = bottom + row as f32 * sim.smoothing_radius;
+                let fullness = (sim.regions[row][col].iter().len() as f32 / 100.0).min(1.0);
+                let color = Color::linear_rgb(fullness, fullness, fullness);
+                commands.entity(entity).insert(Sprite {
+                    custom_size: Some(Vec2::splat(sim.smoothing_radius)),
+                    color,
+                    ..Default::default()
+                });
             } else {
-                let density_scale = (sim.densities[particle.id].0 - sim.target_density) / sim.target_density;
-                NEUTRAL + density_scale.min(4.0) / 4.0 * WARM_DIFF
-            };
-            Color::linear_rgb(rgb.x, rgb.y, rgb.z)
+                // Move the particle off-screen.
+                transform.translation.x = left - sim.smoothing_radius * 2.0;
+            }
         } else {
-            let speed = sim.velocities[particle.id].length();
-            let speed_scale = speed / (sim.speed_limit * sim.particle_size * time.delta_secs());
-            max_speed = max_speed.max(speed_scale);
-            let rgb = COLD + speed_scale * SPEED_DIFF;
-            Color::linear_rgb(rgb.x, rgb.y, rgb.z)
-        };
+            transform.translation.x = sim.positions[particle.id].x;
+            transform.translation.y = sim.positions[particle.id].y;
+            let color = if particle.watched {
+                Color::linear_rgb(1.0, 1.0, 0.0)
+            } else if sim.debug.use_heatmap {
+                let rgb = if sim.densities[particle.id].0 < sim.target_density {
+                    let density_scale = sim.densities[particle.id].0 / sim.target_density;
+                    COLD + density_scale * COLD_DIFF
+                } else {
+                    let density_scale = (sim.densities[particle.id].0 - sim.target_density) / sim.target_density;
+                    NEUTRAL + density_scale.min(4.0) / 4.0 * WARM_DIFF
+                };
+                Color::linear_rgb(rgb.x, rgb.y, rgb.z)
+            } else {
+                let speed = sim.velocities[particle.id].length();
+                let speed_scale = speed / (sim.speed_limit * sim.particle_size * time.delta_secs());
+                max_speed = max_speed.max(speed_scale);
+                let rgb = COLD + speed_scale * SPEED_DIFF;
+                Color::linear_rgb(rgb.x, rgb.y, rgb.z)
+            };
 
-        commands.entity(entity).insert(Sprite {
-            custom_size: Some(Vec2::splat(sim.particle_size * ARGS.sprite_size)),
-            color,
-            ..Default::default()
-        });
+            commands.entity(entity).insert(Sprite {
+                custom_size: Some(Vec2::splat(sim.particle_size * ARGS.sprite_size)),
+                color,
+                ..Default::default()
+            });
+        }
     });
-
-    sim.debug(format!("max speed: {max_speed}"));
+    if sim.debug.use_heatmap {
+        sim.debug(format!("max speed: {max_speed}"));
+    }
 
     sim.end_frame();
 }
@@ -196,9 +242,11 @@ fn update_fps(mut query: Query<&mut TextSpan, With<FpsText>>, time: Res<Time>) {
     }
 }
 
-fn display_message(mut query: Query<(&mut Text2d, &mut Messages)>) {
+fn display_messages(mut query: Query<(&mut Text2d, &mut Messages)>) {
     for (mut text, mut messages) in &mut query {
-        let message_lines: Vec<String> = messages.messages.iter()
+        let message_lines: Vec<String> = messages
+            .messages
+            .iter()
             .filter_map(|message_text| {
                 // if let Some(msg_text) = message_text.text.as_ref() {
                 let duration = Instant::now().duration_since(message_text.start_time);
@@ -226,19 +274,6 @@ fn draw_debug_info(mut gizmos: Gizmos, particle_query: Query<(&Transform, &Parti
     if sim.debug.show_smoothing_radius {
         gizmos.circle_2d(sim.positions[0], sim.smoothing_radius, LIME);
     }
-    if sim.debug.show_region_grid {
-        let bottom = -sim.half_bounds_size.y;
-        let left = -sim.half_bounds_size.x;
-        for row in 0..sim.region_rows {
-            for col in 0..sim.region_cols {
-                gizmos.rect_2d(
-                    Vec2::new(left + col as f32 * sim.smoothing_radius, bottom + row as f32 * sim.smoothing_radius),
-                    Vec2::splat(sim.smoothing_radius),
-                    LIME,
-                );
-            }
-        }
-    }
 }
 
 // Handles clicks on the plane that reposition the object.
@@ -265,7 +300,7 @@ fn handle_mouse_clicks(
         return;
     };
 
-    sim.interaction_input_strength = if left_click { 200.0 } else { -200.0 };
+    sim.interaction_input_strength = ARGS.interaction_input_strength * if left_click { 1.0 } else { -1.0 };
     sim.interaction_input_point = point;
 }
 

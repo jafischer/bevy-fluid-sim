@@ -41,13 +41,7 @@ impl KeyboardCommands {
         };
 
         // Space: freeze / unfreeze particle motion.
-        kb_cmds.add_command(KeyCode::Space, "Pause", 250, |sim, _, _, _, _| {
-            if sim.frames_to_advance() == 0 {
-                sim.set_frames_to_show(u32::MAX);
-            } else {
-                sim.set_frames_to_show(0);
-            }
-        });
+        kb_cmds.add_command(KeyCode::Space, "Pause", 250, pause);
 
         // 1: advance 1 frames.
         kb_cmds.add_command(KeyCode::Digit1, "Advance 1 frame", 500, |sim, _, _, _, _| sim.set_frames_to_show(1));
@@ -75,7 +69,7 @@ impl KeyboardCommands {
         // Shift-W: clear all watched particles.
         kb_cmds.add_command(KeyCode::KeyW, "Watch (highlight) particle under cursor", 250, watch_particle);
         // X: toggle region grid
-        kb_cmds.add_command(KeyCode::KeyX, "Display region grid", 500, |sim, _, _, _, _| sim.toggle_region_grid());
+        kb_cmds.add_command(KeyCode::KeyX, "Display region grid", 500, toggle_grid);
 
         kb_cmds
     }
@@ -90,6 +84,20 @@ impl KeyboardCommands {
                 action,
             },
         );
+    }
+}
+
+fn pause(
+    sim: &mut Simulation,
+    _shift: bool,
+    _cursor_pos: &Vec2,
+    _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
+    _msgs: &mut Single<&mut Messages>,
+) {
+    if sim.frames_to_advance() == 0 {
+        sim.set_frames_to_show(u32::MAX);
+    } else {
+        sim.set_frames_to_show(0);
     }
 }
 
@@ -208,6 +216,35 @@ fn watch_particle(
                 );
                 particle.watched = true;
             }
+        });
+    }
+}
+
+fn toggle_grid(
+    sim: &mut Simulation,
+    _shift: bool,
+    _cursor_pos: &Vec2,
+    _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
+    msgs: &mut Single<&mut Messages>,
+){
+    sim.toggle_region_grid();
+    if sim.debug.show_region_grid {
+        msgs.messages.push(MessageText {
+            text: Some("Region grid heatmap".into()),
+            start_time: Instant::now(),
+            duration: Duration::from_secs(1),
+        });
+    } else if sim.debug.use_heatmap {
+        msgs.messages.push(MessageText {
+            text: Some("Density heatmap".into()),
+            start_time: Instant::now(),
+            duration: Duration::from_secs(1),
+        });
+    } else {
+        msgs.messages.push(MessageText {
+            text: Some("Velocity heatmap".into()),
+            start_time: Instant::now(),
+            duration: Duration::from_secs(1),
         });
     }
 }
