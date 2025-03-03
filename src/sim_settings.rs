@@ -38,12 +38,10 @@ impl Simulation {
 
     pub fn toggle_inertia(&mut self) {
         self.debug.use_inertia = !self.debug.use_inertia;
-        println!("inertia: {}", self.debug.use_inertia);
     }
 
     pub fn toggle_viscosity(&mut self) {
         self.debug.use_viscosity = !self.debug.use_viscosity;
-        println!("viscosity: {}", self.debug.use_viscosity);
     }
 
     pub fn log_next_frame(&mut self) {
@@ -54,11 +52,9 @@ impl Simulation {
         self.smoothing_radius = (self.smoothing_radius + increment).max(increment.abs());
         self.smoothing_scaling_factor = 6.0 / (PI * self.smoothing_radius.powf(4.0));
         self.smoothing_derivative_scaling_factor = PI * self.smoothing_radius.powf(4.0) / 6.0;
-        println!("smoothing_radius: {}", self.smoothing_radius);
     }
 
     pub fn adj_gravity(&mut self, increment: f32) {
         self.gravity.y = (self.gravity.y + increment).min(0.0);
-        println!("gravity: {}", self.gravity);
     }
 }
