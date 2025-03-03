@@ -19,7 +19,7 @@ to give it a go in Rust using the [Bevy game engine](https://bevyengine.org/).
 
 ## Early Results
 
-After wrestling with it for a week or two, I've finally achieved something that
+After wrestling with it for couple of weeks, I've achieved something that
 looks... fluid adjacent.
 
 ![fluid adjacent](./Screenshot%202025-03-02%20at%206.59.13%E2%80%AFPM.png).

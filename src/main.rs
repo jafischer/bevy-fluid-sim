@@ -20,11 +20,15 @@ use crate::sim::Simulation;
 #[derive(Component)]
 struct FpsText;
 
-#[derive(Component)]
 struct MessageText {
     pub text: Option<String>,
     pub start_time: Instant,
     pub duration: Duration,
+}
+
+#[derive(Component)]
+struct Messages {
+    pub messages: Vec<MessageText>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -108,6 +112,13 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
             ..default()
         },
     ));
+    
+    let mut messages = Messages { messages: vec![] };
+    messages.messages.push(MessageText {
+        text: Some("Left-click to attract, right-click to repel\n\nPress ? for keyboard commands".into()),
+        start_time: Instant::now(),
+        duration: Duration::from_secs(1),
+    });
 
     // Dynamic message text
     commands.spawn((
@@ -118,11 +129,7 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
         },
         TextLayout::new_with_justify(JustifyText::Center),
         Transform::from_scale(Vec3::splat(scale)).with_translation(Vec3::new(0.0, 2.0, 1.0)),
-        MessageText {
-            text: Some("Press ? for keyboard commands".into()),
-            start_time: Instant::now(),
-            duration: Duration::from_secs(1),
-        },
+        messages,
     ));
 
     // Keyboard input
@@ -189,17 +196,21 @@ fn update_fps(mut query: Query<&mut TextSpan, With<FpsText>>, time: Res<Time>) {
     }
 }
 
-fn display_message(mut query: Query<(&mut Text2d, &mut MessageText)>) {
-    for (mut text, mut message_text) in &mut query {
-        if let Some(msg_text) = message_text.text.as_ref() {
-            let duration = Instant::now().duration_since(message_text.start_time);
-            if duration > message_text.duration {
-                message_text.text = None;
-                **text = String::new();
-            } else {
-                **text = msg_text.to_string();
-            }
-        }
+fn display_message(mut query: Query<(&mut Text2d, &mut Messages)>) {
+    for (mut text, mut messages) in &mut query {
+        let message_lines: Vec<String> = messages.messages.iter()
+            .filter_map(|message_text| {
+                // if let Some(msg_text) = message_text.text.as_ref() {
+                let duration = Instant::now().duration_since(message_text.start_time);
+                if duration < message_text.duration {
+                    Some(message_text.text.clone())
+                } else {
+                    None
+                }
+            })
+            .map(|s| s.unwrap())
+            .collect();
+        **text = message_lines.join("\n");
     }
 }
 
@@ -254,7 +265,7 @@ fn handle_mouse_clicks(
         return;
     };
 
-    sim.interaction_input_strength = if left_click { -200.0 } else { 200.0 };
+    sim.interaction_input_strength = if left_click { 200.0 } else { -200.0 };
     sim.interaction_input_point = point;
 }
 

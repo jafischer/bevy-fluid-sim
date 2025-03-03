@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use bevy::app::AppExit;
 use bevy::input::ButtonInput;
 use bevy::prelude::*;
-use crate::MessageText;
+use crate::{MessageText, Messages};
 use crate::particle::Particle;
 use crate::sim::Simulation;
 
@@ -21,7 +21,7 @@ type KeyboardAction = fn(
     // current mouse cursor position
     &Vec2,
     particle_query: &mut Query<(&mut Transform, &mut Particle)>,
-    message_text: &mut Single<&mut MessageText>,
+    messages: &mut Single<&mut Messages>,
 );
 
 #[derive(Component)]
@@ -53,46 +53,56 @@ impl KeyboardCommands {
             sim.toggle_smoothing_radius()
         });
         // G: increase/decrease gravity
-        kb_cmds.add_command(KeyCode::KeyG, "Decrease gravity (shift: increase)", 50, |sim, shift, _, _, msg| {
+        kb_cmds.add_command(KeyCode::KeyG, "Decrease gravity (shift: increase)", 50, |sim, shift, _, _, msgs| {
             if shift {
                 sim.adj_gravity(-0.5);
             } else {
                 sim.adj_gravity(0.5);
             }
-            msg.text = Some(format!("Gravity: {:.1}", sim.gravity.y));
-            msg.start_time = Instant::now();
-            msg.duration = Duration::from_secs(1);
+            msgs.messages.push(MessageText {
+                text: Some(format!("Gravity: {:.1}", sim.gravity.y)),
+                start_time: Instant::now(),
+                duration: Duration::from_secs(1),
+            });
         });
         // H: toggle heat map
-        kb_cmds.add_command(KeyCode::KeyH, "Toggle heatmap", 250, |sim, _, _, _, msg| {
+        kb_cmds.add_command(KeyCode::KeyH, "Toggle heatmap", 250, |sim, _, _, _, msgs| {
             sim.toggle_heatmap();
             if sim.debug.use_heatmap {
-                msg.text = Some("Density heatmap".into());
-                msg.start_time = Instant::now();
-                msg.duration = Duration::from_secs(1);
+                msgs.messages.push(MessageText {
+                    text: Some("Density heatmap".into()),
+                    start_time: Instant::now(),
+                    duration: Duration::from_secs(1),
+                });
             } else {
-                msg.text = Some("Velocity heatmap".into());
-                msg.start_time = Instant::now();
-                msg.duration = Duration::from_secs(1);
+                msgs.messages.push(MessageText {
+                    text: Some("Velocity heatmap".into()),
+                    start_time: Instant::now(),
+                    duration: Duration::from_secs(1),
+                });
             }
         });
         // I: toggle inertia (see sim.calculate_pressure()).
-        kb_cmds.add_command(KeyCode::KeyI, "Toggle inertia", 250, |sim, _, _, _, msg| {
+        kb_cmds.add_command(KeyCode::KeyI, "Toggle inertia", 250, |sim, _, _, _, msgs| {
             sim.toggle_inertia();
-            msg.text = Some(format!("Inertia {}", if sim.debug.use_inertia { "on" } else { "off" }));
-            msg.start_time = Instant::now();
-            msg.duration = Duration::from_secs(1);
+            msgs.messages.push(MessageText {
+                text: Some(format!("Inertia {}", if sim.debug.use_inertia { "on" } else { "off" })),
+                start_time: Instant::now(),
+                duration: Duration::from_secs(1),
+            });
         });
         // L: log debug info in the next frame
         kb_cmds.add_command(KeyCode::KeyL, "Log debug info", 250, |sim, _, _, _, _| sim.log_next_frame());
         // R: reset the simulation
         kb_cmds.add_command(KeyCode::KeyR, "Reset particles", 250, |sim, _, _, _, _| sim.reset());
         // I: toggle inertia (see sim.calculate_pressure()).
-        kb_cmds.add_command(KeyCode::KeyV, "Toggle inertia", 250, |sim, _, _, _, msg| {
+        kb_cmds.add_command(KeyCode::KeyV, "Toggle inertia", 250, |sim, _, _, _, msgs| {
             sim.toggle_viscosity();
-            msg.text = Some(format!("Viscosity {}", if sim.debug.use_viscosity { "on" } else { "off" }));
-            msg.start_time = Instant::now();
-            msg.duration = Duration::from_secs(1);
+            msgs.messages.push(MessageText {
+                text: Some(format!("Viscosity {}", if sim.debug.use_viscosity { "on" } else { "off" })),
+                start_time: Instant::now(),
+                duration: Duration::from_secs(1),
+            });
         });
 
         // S: increase/decrease smoothing radius.
@@ -100,15 +110,17 @@ impl KeyboardCommands {
             KeyCode::KeyS,
             "Decrease smoothing radius (shift: increase)",
             50,
-            |sim, shift, _, _, msg| {
+            |sim, shift, _, _, msgs| {
                 if shift {
                     sim.adj_smoothing_radius(0.01);
                 } else {
                     sim.adj_smoothing_radius(-0.01);
                 }
-                msg.text = Some(format!("Smoothing radius: {:.2}", sim.smoothing_radius));
-                msg.start_time = Instant::now();
-                msg.duration = Duration::from_secs(1);
+                msgs.messages.push(MessageText {
+                    text: Some(format!("Smoothing radius: {:.2}", sim.smoothing_radius)),
+                    start_time: Instant::now(),
+                    duration: Duration::from_secs(1),
+                });
             },
         );
         // W: "watch" the particle(s) under the cursor (color them yellow).
@@ -166,7 +178,7 @@ pub fn handle_keypress(
     mut particle_query: Query<(&mut Transform, &mut Particle)>,
     window: Single<&Window>,
     mut kb_cmds: Single<&mut KeyboardCommands>,
-    mut message_text: Single<&mut MessageText>,
+    mut messages: Single<&mut Messages>,
 ) {
     // Esc / Q: quit the app
     if kb.pressed(KeyCode::Escape) || kb.pressed(KeyCode::KeyQ) {
@@ -174,7 +186,7 @@ pub fn handle_keypress(
     }
 
     // ?: display help
-    if kb.pressed(KeyCode::Slash) && (kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight)) {
+    if kb.just_pressed(KeyCode::Slash) && (kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight)) {
         let mut kb_help = String::new();
         for (key, cmd) in kb_cmds.commands.iter() {
             if !kb_help.is_empty() {
@@ -182,9 +194,11 @@ pub fn handle_keypress(
             }
             kb_help.push_str(&format!("{key:?} - {}", cmd.description));
         }
-        message_text.text = Some(kb_help.into());
-        message_text.start_time = Instant::now();
-        message_text.duration = Duration::from_secs(5);
+        messages.messages.push(MessageText {
+            text: Some(kb_help.into()),
+            start_time: Instant::now(),
+            duration: Duration::from_secs(5),
+        });
     }
 
     let now = Instant::now();
@@ -208,7 +222,7 @@ pub fn handle_keypress(
                     kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight),
                     &cursor_pos,
                     &mut particle_query,
-                    &mut message_text,
+                    &mut messages,
                 );
             }
         }
