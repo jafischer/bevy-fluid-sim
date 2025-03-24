@@ -1,6 +1,6 @@
-use std::f32::consts::PI;
-
 use crate::sim::Simulation;
+use bevy::prelude::Vec2;
+use std::f32::consts::PI;
 
 impl Simulation {
     pub fn reset(&mut self) {
@@ -21,10 +21,6 @@ impl Simulation {
         }
     }
 
-    pub fn toggle_arrows(&mut self) {
-        self.debug.show_arrows = !self.debug.show_arrows;
-    }
-
     pub fn toggle_smoothing_radius(&mut self) {
         self.debug.show_smoothing_radius = !self.debug.show_smoothing_radius;
     }
@@ -39,6 +35,10 @@ impl Simulation {
 
     pub fn toggle_inertia(&mut self) {
         self.debug.use_inertia = !self.debug.use_inertia;
+    }
+
+    pub fn reset_inertia(&mut self) {
+        (0..self.num_particles).for_each(|i| self.velocities[i] = Vec2::splat(0.0));
     }
 
     pub fn toggle_viscosity(&mut self) {

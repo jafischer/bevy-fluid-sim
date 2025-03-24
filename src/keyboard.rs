@@ -58,7 +58,7 @@ impl KeyboardCommands {
         // H: toggle heat map
         kb_cmds.add_command(KeyCode::KeyH, "Toggle heatmap", 250, toggle_heatmap);
         // I: toggle inertia
-        kb_cmds.add_command(KeyCode::KeyI, "Toggle inertia", 250, toggle_inertia);
+        kb_cmds.add_command(KeyCode::KeyI, "Reset inertia (shift: toggle inertia)", 250, toggle_inertia);
         // L: log debug info in the next frame
         kb_cmds.add_command(KeyCode::KeyL, "Log debug info", 250, |sim, _, _, _, _| sim.log_next_frame());
         // R: reset the simulation
@@ -71,7 +71,7 @@ impl KeyboardCommands {
         // Shift-W: clear all watched particles.
         kb_cmds.add_command(KeyCode::KeyW, "Watch (highlight) particle under cursor", 250, watch_particle);
         // X: toggle region grid
-        kb_cmds.add_command(KeyCode::KeyX, "Display region grid", 500, toggle_grid);
+        kb_cmds.add_command(KeyCode::KeyX, "Display region grid", 500, |sim, _, _, _, _| sim.toggle_region_grid());
 
         kb_cmds
     }
@@ -116,7 +116,7 @@ fn adj_gravity(
         sim.adj_gravity(0.5);
     }
     msgs.messages.push(MessageText {
-        text: Some(format!("Gravity: {:.1}", sim.gravity.y)),
+        text: format!("Gravity: {:.1}", sim.gravity.y),
         start_time: Instant::now(),
         duration: Duration::from_secs(1),
     });
@@ -132,13 +132,13 @@ fn toggle_heatmap(
     sim.toggle_heatmap();
     if sim.debug.use_heatmap {
         msgs.messages.push(MessageText {
-            text: Some("Density heatmap".into()),
+            text: "Density heatmap".into(),
             start_time: Instant::now(),
             duration: Duration::from_secs(1),
         });
     } else {
         msgs.messages.push(MessageText {
-            text: Some("Velocity heatmap".into()),
+            text: "Velocity heatmap".into(),
             start_time: Instant::now(),
             duration: Duration::from_secs(1),
         });
@@ -147,17 +147,26 @@ fn toggle_heatmap(
 
 fn toggle_inertia(
     sim: &mut Simulation,
-    _shift: bool,
+    shift: bool,
     _cursor_pos: &Vec2,
     _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
     msgs: &mut Single<&mut Messages>,
 ) {
-    sim.toggle_inertia();
-    msgs.messages.push(MessageText {
-        text: Some(format!("Inertia {}", if sim.debug.use_inertia { "on" } else { "off" })),
-        start_time: Instant::now(),
-        duration: Duration::from_secs(1),
-    });
+    if shift {
+        sim.toggle_inertia();
+        msgs.messages.push(MessageText {
+            text: format!("Inertia {}", if sim.debug.use_inertia { "on" } else { "off" }),
+            start_time: Instant::now(),
+            duration: Duration::from_secs(1),
+        });
+    } else {
+        sim.reset_inertia();
+        msgs.messages.push(MessageText {
+            text: "Inertia reset".into(),
+            start_time: Instant::now(),
+            duration: Duration::from_secs(1),
+        });
+    }
 }
 
 fn toggle_viscosity(
@@ -169,7 +178,7 @@ fn toggle_viscosity(
 ) {
     sim.toggle_viscosity();
     msgs.messages.push(MessageText {
-        text: Some(format!("Viscosity {}", if sim.debug.use_viscosity { "on" } else { "off" })),
+        text: format!("Viscosity {}", if sim.debug.use_viscosity { "on" } else { "off" }),
         start_time: Instant::now(),
         duration: Duration::from_secs(1),
     });
@@ -188,7 +197,7 @@ fn adj_smoothing_radius(
         sim.adj_smoothing_radius(-0.01);
     }
     msgs.messages.push(MessageText {
-        text: Some(format!("Smoothing radius: {:.2}", sim.smoothing_radius)),
+        text: format!("Smoothing radius: {:.2}", sim.smoothing_radius),
         start_time: Instant::now(),
         duration: Duration::from_secs(1),
     });
@@ -222,35 +231,6 @@ fn watch_particle(
     }
 }
 
-fn toggle_grid(
-    sim: &mut Simulation,
-    _shift: bool,
-    _cursor_pos: &Vec2,
-    _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
-    msgs: &mut Single<&mut Messages>,
-) {
-    sim.toggle_region_grid();
-    if sim.debug.show_region_grid {
-        msgs.messages.push(MessageText {
-            text: Some("Region grid heatmap".into()),
-            start_time: Instant::now(),
-            duration: Duration::from_secs(1),
-        });
-    } else if sim.debug.use_heatmap {
-        msgs.messages.push(MessageText {
-            text: Some("Density heatmap".into()),
-            start_time: Instant::now(),
-            duration: Duration::from_secs(1),
-        });
-    } else {
-        msgs.messages.push(MessageText {
-            text: Some("Velocity heatmap".into()),
-            start_time: Instant::now(),
-            duration: Duration::from_secs(1),
-        });
-    }
-}
-
 pub fn handle_keypress(
     kb: Res<ButtonInput<KeyCode>>,
     mut app_exit: EventWriter<AppExit>,
@@ -268,15 +248,20 @@ pub fn handle_keypress(
 
     // ?: display help
     if kb.just_pressed(KeyCode::Slash) && (kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight)) {
-        let mut kb_help = String::new();
-        for (key, cmd) in kb_cmds.commands.iter() {
-            if !kb_help.is_empty() {
-                kb_help.push('\n');
+        let mut kb_help: String = "Keyboard commands:".into();
+        // Are we already displaying it?
+        for message in &messages.messages {
+            if message.text.starts_with(&kb_help) {
+                return;
             }
+        }
+        
+        for (key, cmd) in kb_cmds.commands.iter() {
+            kb_help.push('\n');
             kb_help.push_str(&format!("{key:?} - {}", cmd.description));
         }
         messages.messages.push(MessageText {
-            text: Some(kb_help.into()),
+            text: kb_help,
             start_time: Instant::now(),
             duration: Duration::from_secs(5),
         });
