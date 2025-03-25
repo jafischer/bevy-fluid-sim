@@ -6,7 +6,7 @@ use bevy::input::ButtonInput;
 use bevy::prelude::*;
 
 use crate::particle::Particle;
-use crate::sim::Simulation;
+use crate::sim_impl::Simulation;
 use crate::{MessageText, Messages};
 
 /// Defines a keyboard command to associate with a keypress.

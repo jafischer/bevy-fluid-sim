@@ -1,4 +1,4 @@
-use crate::sim::Simulation;
+use crate::sim_impl::Simulation;
 use bevy::prelude::Vec2;
 use std::f32::consts::PI;
 

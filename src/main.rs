@@ -1,7 +1,7 @@
 mod args;
 mod keyboard;
 mod particle;
-mod sim;
+mod sim_impl;
 mod sim_settings;
 mod spatial_hash;
 
@@ -17,7 +17,7 @@ use once_cell::sync::Lazy;
 use crate::args::ARGS;
 use crate::keyboard::{handle_keypress, KeyboardCommands};
 use crate::particle::Particle;
-use crate::sim::Simulation;
+use crate::sim_impl::Simulation;
 
 #[derive(Component)]
 struct FpsText;
