@@ -5,13 +5,15 @@ mod sim;
 mod sim_settings;
 mod spatial_hash;
 
+use std::ops::{Deref, DerefMut};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use bevy::color::palettes::basic::*;
 use bevy::color::palettes::css::GOLD;
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResized, WindowResolution};
-
+use once_cell::sync::Lazy;
 use crate::args::ARGS;
 use crate::keyboard::{handle_keypress, KeyboardCommands};
 use crate::particle::Particle;
@@ -195,9 +197,20 @@ fn update_particles(
     sim.end_frame();
 }
 
-fn update_fps(mut query: Query<&mut TextSpan, With<FpsText>>, time: Res<Time>) {
+static TOT_FPS: Lazy<Mutex<f32>> = Lazy::new(|| Mutex::new(0.0));
+
+fn update_fps(
+    mut query: Query<&mut TextSpan, With<FpsText>>, time: Res<Time>,
+    sim: Single<&Simulation>) {
     for mut span in &mut query {
-        **span = format!("{:.1}", 1.0 / time.delta_secs());
+        if time.delta_secs() == 0.0 { return; }
+        
+        let cur_fps = 1.0 / time.delta_secs();
+        let mut tot_fps = TOT_FPS.lock().unwrap();
+        println!("current frame: {}", sim.debug.current_frame);
+        
+        *tot_fps.deref_mut() += cur_fps;
+        **span = format!("{cur_fps:.1} / avg {:.1}", tot_fps.deref() / (sim.debug.current_frame as f32));
     }
 }
 
