@@ -27,12 +27,19 @@ looks... fluid adjacent.
 ## Running
 
 To speed up compiling (world record understatement), I use the `dynamic_linking`
-bevy feature. Therefore, running the app requires the following:
+bevy feature. Therefore, running the app requires telling it where to find
+the shared libraries.
 
 ### Mac
 
+Basically, for every `Library not loaded: @rpath/xxx.dylib`
+error, you need to find where this library is located, and add it to 
+the `DYLD_FALLBACK_LIBRARY_PATH` environment variable.
+
+Example:
 ```
-DYLD_FALLBACK_LIBRARY_PATH=$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/lib ./target/release/bevy-fluid-sim
+libstd_loc=$(find $HOME/.rustup -name libstd-9a8d4c925c11f507.dylib)
+DYLD_FALLBACK_LIBRARY_PATH=$(libstd_loc) ./target/release/bevy-fluid-sim
 ```
 
 ### Windows
