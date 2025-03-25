@@ -6,8 +6,8 @@ use bevy::input::ButtonInput;
 use bevy::prelude::*;
 
 use crate::particle::Particle;
-use crate::sim_impl::Simulation;
 use crate::{MessageText, Messages};
+use crate::sim_struct::Simulation;
 
 /// Defines a keyboard command to associate with a keypress.
 /// Each command can have a different repeat rate.

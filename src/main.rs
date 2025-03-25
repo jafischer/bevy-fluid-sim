@@ -4,6 +4,7 @@ mod particle;
 mod sim_impl;
 mod sim_settings;
 mod spatial_hash;
+mod sim_struct;
 
 use std::ops::{Deref, DerefMut};
 use std::sync::Mutex;
@@ -17,7 +18,7 @@ use once_cell::sync::Lazy;
 use crate::args::ARGS;
 use crate::keyboard::{handle_keypress, KeyboardCommands};
 use crate::particle::Particle;
-use crate::sim_impl::Simulation;
+use crate::sim_struct::Simulation;
 
 #[derive(Component)]
 struct FpsText;
@@ -204,11 +205,10 @@ fn update_fps(
     sim: Single<&Simulation>) {
     for mut span in &mut query {
         if time.delta_secs() == 0.0 { return; }
-        
+
         let cur_fps = 1.0 / time.delta_secs();
         let mut tot_fps = TOT_FPS.lock().unwrap();
-        println!("current frame: {}", sim.debug.current_frame);
-        
+
         *tot_fps.deref_mut() += cur_fps;
         **span = format!("{cur_fps:.1} / avg {:.1}", tot_fps.deref() / (sim.debug.current_frame as f32));
     }

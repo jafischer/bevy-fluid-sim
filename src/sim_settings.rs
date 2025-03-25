@@ -1,6 +1,6 @@
-use crate::sim_impl::Simulation;
 use bevy::prelude::Vec2;
 use std::f32::consts::PI;
+use crate::sim_struct::Simulation;
 
 impl Simulation {
     pub fn reset(&mut self) {
