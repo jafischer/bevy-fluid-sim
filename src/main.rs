@@ -3,22 +3,22 @@ mod keyboard;
 mod particle;
 mod sim_impl;
 mod sim_settings;
-mod spatial_hash;
 mod sim_struct;
+mod spatial_hash;
 
 use std::ops::{Deref, DerefMut};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use crate::args::ARGS;
+use crate::keyboard::{handle_keypress, KeyboardCommands};
+use crate::particle::Particle;
+use crate::sim_struct::Simulation;
 use bevy::color::palettes::basic::*;
 use bevy::color::palettes::css::GOLD;
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResized, WindowResolution};
 use once_cell::sync::Lazy;
-use crate::args::ARGS;
-use crate::keyboard::{handle_keypress, KeyboardCommands};
-use crate::particle::Particle;
-use crate::sim_struct::Simulation;
 
 #[derive(Component)]
 struct FpsText;
@@ -83,15 +83,7 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
     // FPS display.
     commands
         .spawn((
-            // Create a Text with multiple child spans.
-            Text::new("FPS: "),
-            TextFont {
-                font_size: 16.0,
-                ..default()
-            },
-        ))
-        .with_child((
-            TextSpan::default(),
+            Text::default(),
             (
                 TextFont {
                     font_size: 16.0,
@@ -152,7 +144,6 @@ const STOPPED: Vec3 = Vec3::new(0.1, 0.1, 0.1);
 const FAST: Vec3 = Vec3::new(1.0, 1.0, 1.0);
 const SPEED_DIFF: Vec3 = Vec3::new(FAST.x - STOPPED.x, FAST.y - STOPPED.y, FAST.z - STOPPED.z);
 
-
 fn update_particles(
     mut commands: Commands,
     mut particle_query: Query<(Entity, &mut Transform, &mut Particle)>,
@@ -200,18 +191,22 @@ fn update_particles(
 
 static TOT_FPS: Lazy<Mutex<f32>> = Lazy::new(|| Mutex::new(0.0));
 
-fn update_fps(
-    mut query: Query<&mut TextSpan, With<FpsText>>, time: Res<Time>,
-    sim: Single<&Simulation>) {
-    for mut span in &mut query {
-        if time.delta_secs() == 0.0 { return; }
+fn update_fps(mut query: Query<(&mut Text, &FpsText)>, time: Res<Time>, sim: Single<&Simulation>) {
+        for (mut span, _) in &mut query {
+            if time.delta_secs() == 0.0 {
+                return;
+            }
 
-        let cur_fps = 1.0 / time.delta_secs();
-        let mut tot_fps = TOT_FPS.lock().unwrap();
+            let cur_fps = 1.0 / time.delta_secs();
+            let mut tot_fps = TOT_FPS.lock().unwrap();
 
-        *tot_fps.deref_mut() += cur_fps;
-        **span = format!("{cur_fps:.1} / avg {:.1}", tot_fps.deref() / (sim.debug.current_frame as f32));
-    }
+            *tot_fps.deref_mut() += cur_fps;
+            if sim.debug.show_fps {
+                **span = format!("FPS: {:5.1} / avg {:.1}", cur_fps, tot_fps.deref() / (sim.debug.current_frame as f32));
+            } else if !span.is_empty() {
+                **span = String::new();
+            }
+        }
 }
 
 fn display_messages(mut query: Query<(&mut Text2d, &mut Messages)>) {
@@ -230,7 +225,12 @@ fn display_messages(mut query: Query<(&mut Text2d, &mut Messages)>) {
                 }
             })
             .collect();
-        **text = messages.messages.iter().map(|m| m.text.as_str()).collect::<Vec<&str>>().join("\n");
+        **text = messages
+            .messages
+            .iter()
+            .map(|m| m.text.as_str())
+            .collect::<Vec<&str>>()
+            .join("\n");
     }
 }
 

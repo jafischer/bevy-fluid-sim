@@ -53,18 +53,20 @@ impl KeyboardCommands {
         kb_cmds.add_command(KeyCode::KeyC, "Show smoothing radius around particle 0", 250, |sim, _, _, _, _| {
             sim.toggle_smoothing_radius()
         });
+        // F: toggle FPS
+        kb_cmds.add_command(KeyCode::KeyF, "Toggle FPS", 500, toggle_fps);
         // G: increase/decrease gravity
         kb_cmds.add_command(KeyCode::KeyG, "Decrease gravity (shift: increase)", 50, adj_gravity);
         // H: toggle heat map
-        kb_cmds.add_command(KeyCode::KeyH, "Toggle heatmap", 250, toggle_heatmap);
+        kb_cmds.add_command(KeyCode::KeyH, "Toggle heatmap", 500, toggle_heatmap);
         // I: toggle inertia
-        kb_cmds.add_command(KeyCode::KeyI, "Reset inertia (shift: toggle inertia)", 250, toggle_inertia);
+        kb_cmds.add_command(KeyCode::KeyI, "Reset inertia (shift: toggle inertia)", 250, reset_inertia);
         // L: log debug info in the next frame
         kb_cmds.add_command(KeyCode::KeyL, "Log debug info", 250, |sim, _, _, _, _| sim.log_next_frame());
         // R: reset the simulation
         kb_cmds.add_command(KeyCode::KeyR, "Reset particles", 250, |sim, _, _, _, _| sim.reset());
         // V: toggle viscosity
-        kb_cmds.add_command(KeyCode::KeyV, "Toggle inertia", 250, toggle_viscosity);
+        kb_cmds.add_command(KeyCode::KeyV, "Toggle viscosity", 250, toggle_viscosity);
         // S: increase/decrease smoothing radius.
         kb_cmds.add_command(KeyCode::KeyS, "Decrease smoothing radius (shift: increase)", 50, adj_smoothing_radius);
         // W: "watch" the particle(s) under the cursor (color them yellow).
@@ -103,6 +105,16 @@ fn pause(
     }
 }
 
+fn toggle_fps(
+    sim: &mut Simulation,
+    _shift: bool,
+    _cursor_pos: &Vec2,
+    _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
+    _msgs: &mut Single<&mut Messages>,
+) {
+    sim.toggle_fps();
+}
+
 fn adj_gravity(
     sim: &mut Simulation,
     shift: bool,
@@ -111,9 +123,9 @@ fn adj_gravity(
     msgs: &mut Single<&mut Messages>,
 ) {
     if shift {
-        sim.adj_gravity(-0.5);
+        sim.adj_gravity(-0.1);
     } else {
-        sim.adj_gravity(0.5);
+        sim.adj_gravity(0.1);
     }
     msgs.messages.push(MessageText {
         text: format!("Gravity: {:.1}", sim.gravity.y),
@@ -145,7 +157,7 @@ fn toggle_heatmap(
     }
 }
 
-fn toggle_inertia(
+fn reset_inertia(
     sim: &mut Simulation,
     shift: bool,
     _cursor_pos: &Vec2,

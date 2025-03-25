@@ -1,5 +1,4 @@
 use std::f32::consts::PI;
-use std::fmt::Debug;
 
 use bevy::prelude::*;
 use rand::random;
@@ -85,6 +84,7 @@ impl Simulation {
                 current_frame: 0,
                 frames_to_show: u32::MAX,
                 log_frame: 0,
+                show_fps: false,
                 show_smoothing_radius: false,
                 show_region_grid: false,
                 use_inertia: true,

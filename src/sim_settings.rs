@@ -29,6 +29,10 @@ impl Simulation {
         self.debug.show_region_grid = !self.debug.show_region_grid;
     }
 
+    pub fn toggle_fps(&mut self) {
+        self.debug.show_fps = !self.debug.show_fps;
+    }
+
     pub fn toggle_heatmap(&mut self) {
         self.debug.use_heatmap = !self.debug.use_heatmap;
     }
