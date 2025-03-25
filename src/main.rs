@@ -10,15 +10,16 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use crate::args::ARGS;
-use crate::keyboard::{handle_keypress, KeyboardCommands};
-use crate::particle::Particle;
-use crate::sim_struct::Simulation;
 use bevy::color::palettes::basic::*;
 use bevy::color::palettes::css::GOLD;
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResized, WindowResolution};
 use once_cell::sync::Lazy;
+
+use crate::args::ARGS;
+use crate::keyboard::{handle_keypress, KeyboardCommands};
+use crate::particle::Particle;
+use crate::sim_struct::Simulation;
 
 #[derive(Component)]
 struct FpsText;
@@ -81,18 +82,17 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
     commands.spawn(sim);
 
     // FPS display.
-    commands
-        .spawn((
-            Text::default(),
-            (
-                TextFont {
-                    font_size: 16.0,
-                    ..default()
-                },
-                TextColor(GOLD.into()),
-            ),
-            FpsText,
-        ));
+    commands.spawn((
+        Text::default(),
+        (
+            TextFont {
+                font_size: 16.0,
+                ..default()
+            },
+            TextColor(GOLD.into()),
+        ),
+        FpsText,
+    ));
 
     // Display the number of particles.
     commands.spawn((
@@ -192,21 +192,21 @@ fn update_particles(
 static TOT_FPS: Lazy<Mutex<f32>> = Lazy::new(|| Mutex::new(0.0));
 
 fn update_fps(mut query: Query<(&mut Text, &FpsText)>, time: Res<Time>, sim: Single<&Simulation>) {
-        for (mut span, _) in &mut query {
-            if time.delta_secs() == 0.0 {
-                return;
-            }
-
-            let cur_fps = 1.0 / time.delta_secs();
-            let mut tot_fps = TOT_FPS.lock().unwrap();
-
-            *tot_fps.deref_mut() += cur_fps;
-            if sim.debug.show_fps {
-                **span = format!("FPS: {:5.1} / avg {:.1}", cur_fps, tot_fps.deref() / (sim.debug.current_frame as f32));
-            } else if !span.is_empty() {
-                **span = String::new();
-            }
+    for (mut span, _) in &mut query {
+        if time.delta_secs() == 0.0 {
+            return;
         }
+
+        let cur_fps = 1.0 / time.delta_secs();
+        let mut tot_fps = TOT_FPS.lock().unwrap();
+
+        *tot_fps.deref_mut() += cur_fps;
+        if sim.debug.show_fps {
+            **span = format!("FPS: {:5.1} / avg {:.1}", cur_fps, tot_fps.deref() / (sim.debug.current_frame as f32));
+        } else if !span.is_empty() {
+            **span = String::new();
+        }
+    }
 }
 
 fn display_messages(mut query: Query<(&mut Text2d, &mut Messages)>) {

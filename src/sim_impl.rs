@@ -134,15 +134,15 @@ impl Simulation {
         } else {
             self.update_regions();
         }
-        
+
         self.calculate_densities();
         if self.frames_to_advance() > 0 {
             // TODO:
             // if self.debug.use_sfs {
             //     self.sfs_
             // } else {
-                self.calculate_pressures(delta);
-                self.apply_velocities();
+            self.calculate_pressures(delta);
+            self.apply_velocities();
             // }
         }
     }
@@ -203,7 +203,7 @@ impl Simulation {
                 .map(|i| self.calculate_density(i))
                 .collect();
         }
-        
+
         if self.debug.log_frame == self.debug.current_frame {
             let lowest_density = self
                 .densities
@@ -265,10 +265,10 @@ impl Simulation {
             .into_par_iter()
             .map(|i| self.calculate_pressure(i, delta))
             .collect();
-        
+
         self.predicted_positions = (0..self.num_particles)
             .into_par_iter()
-            .map(|i| self.positions[i] + self.velocities[i] * self.prediction_factor )
+            .map(|i| self.positions[i] + self.velocities[i] * self.prediction_factor)
             .collect();
     }
 
@@ -288,7 +288,7 @@ impl Simulation {
         } else {
             velocity = pressure_force + gravity_force;
         }
-        
+
         velocity
     }
 

@@ -6,8 +6,8 @@ use bevy::input::ButtonInput;
 use bevy::prelude::*;
 
 use crate::particle::Particle;
-use crate::{MessageText, Messages};
 use crate::sim_struct::Simulation;
+use crate::{MessageText, Messages};
 
 /// Defines a keyboard command to associate with a keypress.
 /// Each command can have a different repeat rate.
@@ -267,7 +267,7 @@ pub fn handle_keypress(
                 return;
             }
         }
-        
+
         for (key, cmd) in kb_cmds.commands.iter() {
             kb_help.push('\n');
             kb_help.push_str(&format!("{key:?} - {}", cmd.description));

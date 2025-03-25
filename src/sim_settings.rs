@@ -1,5 +1,7 @@
-use bevy::prelude::Vec2;
 use std::f32::consts::PI;
+
+use bevy::prelude::Vec2;
+
 use crate::sim_struct::Simulation;
 
 impl Simulation {

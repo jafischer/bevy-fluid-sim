@@ -1,4 +1,5 @@
 use std::fmt::{Debug, Formatter};
+
 use bevy::math::Vec2;
 use bevy::prelude::Component;
 
