@@ -403,12 +403,12 @@ impl Simulation {
         // Input interactions modify gravity
         if self.interaction_input_strength != 0.0 {
             let input_point_offset = self.interaction_input_point - pos;
-            let sqr_dst = input_point_offset.dot(input_point_offset);
-            if sqr_dst < self.interaction_input_radius * self.interaction_input_radius {
-                let dst = sqr_dst.sqrt();
-                let edge_t = dst / self.interaction_input_radius;
+            let sqr_distance = input_point_offset.dot(input_point_offset);
+            if sqr_distance < self.interaction_input_radius * self.interaction_input_radius {
+                let distance = sqr_distance.sqrt();
+                let edge_t = distance / self.interaction_input_radius;
                 let centre_t = 1.0 - edge_t;
-                let dir_to_centre = input_point_offset / dst;
+                let dir_to_centre = input_point_offset / distance;
 
                 let gravity_weight = 1.0 - (centre_t * (self.interaction_input_strength / 10.0).clamp(0.0, 1.0));
                 let mut accel =
@@ -426,64 +426,64 @@ impl Simulation {
     // yet switched to using it.
     //
 
-    fn sfs_smoothing_kernel_poly6(&self, dst: f32) -> f32 {
-        if dst < self.smoothing_radius {
-            let v: f32 = self.smoothing_radius * self.smoothing_radius - dst * dst;
+    fn sfs_smoothing_kernel_poly6(&self, distance: f32) -> f32 {
+        if distance < self.smoothing_radius {
+            let v: f32 = self.smoothing_radius * self.smoothing_radius - distance * distance;
             return v * v * v * self.poly6_scaling_factor;
         }
         0.0
     }
 
-    fn sfs_spiky_kernel_pow3(&self, dst: f32) -> f32 {
-        if dst < self.smoothing_radius {
-            let v: f32 = self.smoothing_radius - dst;
+    fn sfs_spiky_kernel_pow3(&self, distance: f32) -> f32 {
+        if distance < self.smoothing_radius {
+            let v: f32 = self.smoothing_radius - distance;
             return v * v * v * self.spiky_pow3_scaling_factor;
         }
         0.0
     }
 
-    fn sfs_spiky_kernel_pow2(&self, dst: f32) -> f32 {
-        if dst < self.smoothing_radius {
-            let v: f32 = self.smoothing_radius - dst;
+    fn sfs_spiky_kernel_pow2(&self, distance: f32) -> f32 {
+        if distance < self.smoothing_radius {
+            let v: f32 = self.smoothing_radius - distance;
             return v * v * self.spiky_pow2_scaling_factor;
         }
         0.0
     }
 
-    fn sfs_derivative_spiky_pow3(&self, dst: f32) -> f32 {
-        if dst < self.smoothing_radius {
-            let v: f32 = self.smoothing_radius - dst;
+    fn sfs_derivative_spiky_pow3(&self, distance: f32) -> f32 {
+        if distance < self.smoothing_radius {
+            let v: f32 = self.smoothing_radius - distance;
             return -v * v * self.spiky_pow3_derivative_scaling_factor;
         }
         0.0
     }
 
-    fn sfs_derivative_spiky_pow2(&self, dst: f32) -> f32 {
-        if dst < self.smoothing_radius {
-            let v: f32 = self.smoothing_radius - dst;
+    fn sfs_derivative_spiky_pow2(&self, distance: f32) -> f32 {
+        if distance < self.smoothing_radius {
+            let v: f32 = self.smoothing_radius - distance;
             return -v * self.spiky_pow2_derivative_scaling_factor;
         }
         0.0
     }
 
-    fn sfs_density_kernel(&self, dst: f32) -> f32 {
-        self.sfs_spiky_kernel_pow2(dst)
+    fn sfs_density_kernel(&self, distance: f32) -> f32 {
+        self.sfs_spiky_kernel_pow2(distance)
     }
 
-    fn sfs_near_density_kernel(&self, dst: f32) -> f32 {
-        self.sfs_spiky_kernel_pow3(dst)
+    fn sfs_near_density_kernel(&self, distance: f32) -> f32 {
+        self.sfs_spiky_kernel_pow3(distance)
     }
 
-    fn sfs_density_derivative(&self, dst: f32) -> f32 {
-        self.sfs_derivative_spiky_pow2(dst)
+    fn sfs_density_derivative(&self, distance: f32) -> f32 {
+        self.sfs_derivative_spiky_pow2(distance)
     }
 
-    fn sfs_near_density_derivative(&self, dst: f32) -> f32 {
-        self.sfs_derivative_spiky_pow3(dst)
+    fn sfs_near_density_derivative(&self, distance: f32) -> f32 {
+        self.sfs_derivative_spiky_pow3(distance)
     }
 
-    fn sfs_viscosity_kernel(&self, dst: f32) -> f32 {
-        self.sfs_smoothing_kernel_poly6(dst)
+    fn sfs_viscosity_kernel(&self, distance: f32) -> f32 {
+        self.sfs_smoothing_kernel_poly6(distance)
     }
 
     fn sfs_calculate_density(&self, pos: &Vec2) -> (f32, f32) {
@@ -514,17 +514,17 @@ impl Simulation {
                 let neighbour_index = index_data[0];
                 let neighbour_pos = self.predicted_positions[neighbour_index as usize];
                 let offset_to_neighbour = neighbour_pos - pos;
-                let sqr_dst_to_neighbour = offset_to_neighbour.dot(offset_to_neighbour);
+                let sqr_distance_to_neighbour = offset_to_neighbour.dot(offset_to_neighbour);
 
                 // Skip if not within radius
-                if sqr_dst_to_neighbour > sqr_radius {
+                if sqr_distance_to_neighbour > sqr_radius {
                     continue;
                 }
 
                 // Calculate density and near density
-                let dst = sqr_dst_to_neighbour.sqrt();
-                density += self.sfs_density_kernel(dst);
-                near_density += self.sfs_near_density_kernel(dst);
+                let distance = sqr_distance_to_neighbour.sqrt();
+                density += self.sfs_density_kernel(distance);
+                near_density += self.sfs_near_density_kernel(distance);
             }
         }
 
