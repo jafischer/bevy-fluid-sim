@@ -16,6 +16,7 @@ pub struct Simulation {
     pub target_density: f32,
     pub pressure_multiplier: f32,
     pub near_pressure_multiplier: f32,
+    pub viscosity_strength: f32,
     pub speed_limit: f32,
     pub collision_damping: f32,
 
@@ -36,6 +37,7 @@ pub struct Simulation {
     pub prediction_factor: f32,
     pub predicted_positions: Vec<Vec2>,
     pub spatial_offsets: Vec<u32>,
+    pub spatial_keys: Vec<u32>,
     pub spatial_indices: Vec<[u32; 3]>,
     pub poly6_scaling_factor: f32,
     pub spiky_pow3_scaling_factor: f32,

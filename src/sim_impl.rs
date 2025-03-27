@@ -6,7 +6,7 @@ use rayon::prelude::*;
 
 use crate::args::ARGS;
 use crate::sim_struct::{DebugParams, Simulation};
-use crate::spatial_hash::{get_cell_2d, hash_cell_2d, key_from_hash, OFFSETS_2D};
+use crate::spatial_hash::OFFSETS_2D;
 use crate::Particle;
 
 impl Simulation {
@@ -38,6 +38,8 @@ impl Simulation {
         spatial_offsets.resize_with(num_particles, Default::default);
         let mut spatial_indices = vec![];
         spatial_indices.resize_with(num_particles, Default::default);
+        let mut spatial_keys = vec![];
+        spatial_keys.resize_with(num_particles, Default::default);
         let mut predicted_positions = vec![];
         predicted_positions.resize_with(num_particles, Default::default);
 
@@ -53,6 +55,7 @@ impl Simulation {
             target_density: 1.5 / scale,
             pressure_multiplier: ARGS.pressure_multiplier as f32,
             near_pressure_multiplier: 100.0, // TODO: ARGS.near_pressure_multiplier as f32,
+            viscosity_strength: 0.0,
             speed_limit: ARGS.speed_limit,
             collision_damping: ARGS.collision_damping,
 
@@ -72,6 +75,7 @@ impl Simulation {
             prediction_factor: 1.0 / 120.0,
             predicted_positions,
             spatial_offsets,
+            spatial_keys,
             spatial_indices,
             poly6_scaling_factor: 4.0 / (PI * smoothing_radius.powf(8.0)),
             spiky_pow3_scaling_factor: 10.0 / (PI * smoothing_radius.powf(5.0)),
@@ -275,7 +279,8 @@ impl Simulation {
     fn calculate_pressure(&self, id: usize, delta: f32) -> Vec2 {
         let mut velocity = self.velocities[id];
         let pressure_force = self.pressure_force(id) * delta;
-        let gravity_force = self.external_forces(&self.positions[id], &velocity) * delta;
+        // let pressure_force = self.sfs_calculate_pressure_force(id) * delta;
+        let gravity_force = self.external_forces(id) * delta;
 
         if self.debug.use_inertia {
             // Poor man's viscosity:
@@ -399,7 +404,9 @@ impl Simulation {
         gradient
     }
 
-    fn external_forces(&self, pos: &Vec2, velocity: &Vec2) -> Vec2 {
+    fn external_forces(&self, id: usize) -> Vec2 {
+        let pos = self.positions[id];
+        let velocity = self.velocities[id];
         // Input interactions modify gravity
         if self.interaction_input_strength != 0.0 {
             let input_point_offset = self.interaction_input_point - pos;
@@ -419,136 +426,5 @@ impl Simulation {
         }
 
         self.gravity * self.scale
-    }
-
-    //
-    // The following functions are translated from the Fluid-Sim shader code, but I've not
-    // yet switched to using it.
-    //
-
-    fn sfs_smoothing_kernel_poly6(&self, distance: f32) -> f32 {
-        if distance < self.smoothing_radius {
-            let v: f32 = self.smoothing_radius * self.smoothing_radius - distance * distance;
-            return v * v * v * self.poly6_scaling_factor;
-        }
-        0.0
-    }
-
-    fn sfs_spiky_kernel_pow3(&self, distance: f32) -> f32 {
-        if distance < self.smoothing_radius {
-            let v: f32 = self.smoothing_radius - distance;
-            return v * v * v * self.spiky_pow3_scaling_factor;
-        }
-        0.0
-    }
-
-    fn sfs_spiky_kernel_pow2(&self, distance: f32) -> f32 {
-        if distance < self.smoothing_radius {
-            let v: f32 = self.smoothing_radius - distance;
-            return v * v * self.spiky_pow2_scaling_factor;
-        }
-        0.0
-    }
-
-    fn sfs_derivative_spiky_pow3(&self, distance: f32) -> f32 {
-        if distance < self.smoothing_radius {
-            let v: f32 = self.smoothing_radius - distance;
-            return -v * v * self.spiky_pow3_derivative_scaling_factor;
-        }
-        0.0
-    }
-
-    fn sfs_derivative_spiky_pow2(&self, distance: f32) -> f32 {
-        if distance < self.smoothing_radius {
-            let v: f32 = self.smoothing_radius - distance;
-            return -v * self.spiky_pow2_derivative_scaling_factor;
-        }
-        0.0
-    }
-
-    fn sfs_density_kernel(&self, distance: f32) -> f32 {
-        self.sfs_spiky_kernel_pow2(distance)
-    }
-
-    fn sfs_near_density_kernel(&self, distance: f32) -> f32 {
-        self.sfs_spiky_kernel_pow3(distance)
-    }
-
-    fn sfs_density_derivative(&self, distance: f32) -> f32 {
-        self.sfs_derivative_spiky_pow2(distance)
-    }
-
-    fn sfs_near_density_derivative(&self, distance: f32) -> f32 {
-        self.sfs_derivative_spiky_pow3(distance)
-    }
-
-    fn sfs_viscosity_kernel(&self, distance: f32) -> f32 {
-        self.sfs_smoothing_kernel_poly6(distance)
-    }
-
-    fn sfs_calculate_density(&self, pos: &Vec2) -> (f32, f32) {
-        let origin_cell = get_cell_2d(pos, self.smoothing_radius);
-        let sqr_radius = self.smoothing_radius * self.smoothing_radius;
-        let mut density = 0.0;
-        let mut near_density = 0.0;
-
-        // Neighbour search
-        for offset in OFFSETS_2D {
-            let cell = (origin_cell.0 + offset.0, origin_cell.1 + offset.1);
-            let hash = hash_cell_2d(&cell);
-            let key = key_from_hash(hash, self.num_particles as u32);
-            let mut curr_index = self.spatial_offsets[key as usize];
-
-            while (curr_index as usize) < self.num_particles {
-                let index_data = self.spatial_indices[curr_index as usize];
-                curr_index += 1;
-                // Exit if no longer looking at correct bin
-                if index_data[2] != key {
-                    break;
-                }
-                // Skip if hash does not match
-                if index_data[1] != hash {
-                    continue;
-                }
-
-                let neighbour_index = index_data[0];
-                let neighbour_pos = self.predicted_positions[neighbour_index as usize];
-                let offset_to_neighbour = neighbour_pos - pos;
-                let sqr_distance_to_neighbour = offset_to_neighbour.dot(offset_to_neighbour);
-
-                // Skip if not within radius
-                if sqr_distance_to_neighbour > sqr_radius {
-                    continue;
-                }
-
-                // Calculate density and near density
-                let distance = sqr_distance_to_neighbour.sqrt();
-                density += self.sfs_density_kernel(distance);
-                near_density += self.sfs_near_density_kernel(distance);
-            }
-        }
-
-        (density, near_density)
-    }
-
-    fn sfs_pressure_from_density(&self, density: f32) -> f32 {
-        (density - self.target_density) * self.pressure_multiplier
-    }
-
-    fn sfs_near_pressure_from_density(&self, near_density: f32) -> f32 {
-        self.near_pressure_multiplier * near_density
-    }
-
-    fn sfs_update_spatial_hash(&mut self) {
-        for id in 0..self.num_particles {
-            // Reset offsets
-            self.spatial_offsets[id] = self.num_particles as u32;
-            // Update index buffer
-            let index = id;
-            let cell = get_cell_2d(&self.predicted_positions[index], self.smoothing_radius);
-            let hash = hash_cell_2d(&cell);
-            let key = key_from_hash(hash, self.num_particles as u32);
-            self.spatial_indices[id] = [index as u32, hash, key];
-        }
     }
 }

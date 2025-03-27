@@ -5,6 +5,7 @@ mod sim_impl;
 mod sim_settings;
 mod sim_struct;
 mod spatial_hash;
+mod sim_sfs_impl;
 
 use std::ops::{Deref, DerefMut};
 use std::sync::Mutex;
