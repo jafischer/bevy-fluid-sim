@@ -53,7 +53,6 @@ impl Debug for Simulation {
         writeln!(f, "Simulation:")?;
         writeln!(f, "    smoothing_radius: {}", self.smoothing_radius)?;
         writeln!(f, "    num_particles: {}", self.num_particles)?;
-        writeln!(f, "    scale: {}", self.scale)?;
         writeln!(f, "    particle_size: {}", self.particle_size)?;
         writeln!(f, "    gravity: {}", self.gravity)?;
         writeln!(f, "    target_density: {}", self.target_density)?;
@@ -74,4 +73,6 @@ pub struct DebugParams {
     pub use_inertia: bool,
     pub use_viscosity: bool,
     pub use_heatmap: bool,
+    pub show_arrows: bool,
+    pub use_predicted_positions: bool,
 }

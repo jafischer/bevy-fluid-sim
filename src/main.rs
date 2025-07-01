@@ -76,10 +76,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn setup(mut commands: Commands, window: Single<&Window>) {
     // Create the simulation and add it to ECS.
-    let mut sim = Simulation::new(window.width(), window.height());
+    let sim = Simulation::new(window.width(), window.height(), &mut commands);
     let scale = sim.scale;
     commands.spawn((Camera2d, Transform::from_scale(Vec3::splat(scale))));
-    sim.spawn_particles(&mut commands);
     commands.spawn(sim);
 
     // FPS display.
@@ -235,7 +234,21 @@ fn display_messages(mut query: Query<(&mut Text2d, &mut Messages)>) {
     }
 }
 
-fn draw_debug_info(mut gizmos: Gizmos, sim: Single<&Simulation>) {
+fn draw_debug_info(
+    mut gizmos: Gizmos,
+    sim: Single<&Simulation>,
+    particle_query: Query<(&mut Transform, &mut Particle)>,
+) {
+    if sim.debug.show_arrows {
+        particle_query.iter().for_each(|(transform, particle)| {
+            if particle.watched {
+                let arrow_end = transform.translation.xy() + sim.velocities[particle.id] * 2.0;
+                gizmos
+                    .arrow(transform.translation.xy().extend(0.0), arrow_end.extend(0.0), YELLOW)
+                    .with_tip_length(sim.particle_size);
+            }
+        });
+    }
     if sim.debug.show_smoothing_radius {
         gizmos.circle_2d(sim.positions[0], sim.smoothing_radius, LIME);
     }
