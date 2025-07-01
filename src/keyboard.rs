@@ -48,7 +48,7 @@ impl KeyboardCommands {
         // 1: advance 1 frames.
         kb_cmds.add_command(KeyCode::Digit1, "Advance 1 frame", 500, |sim, _, _, _, _| sim.set_frames_to_show(1));
         // A: toggle velocity arrows
-        // kb_cmds.add_command(KeyCode::KeyA, "Toggle velocity arrows", 250, |sim, _, _, _, _| sim.toggle_arrows());
+        kb_cmds.add_command(KeyCode::KeyA, "Toggle velocity arrows", 250, |sim, _, _, _, _| sim.toggle_arrows());
         // C: toggle display of smoothing radius circle.
         kb_cmds.add_command(KeyCode::KeyC, "Show smoothing radius around particle 0", 250, |sim, _, _, _, _| {
             sim.toggle_smoothing_radius()
@@ -63,6 +63,8 @@ impl KeyboardCommands {
         kb_cmds.add_command(KeyCode::KeyI, "Reset inertia (shift: toggle inertia)", 250, reset_inertia);
         // L: log debug info in the next frame
         kb_cmds.add_command(KeyCode::KeyL, "Log debug info", 250, |sim, _, _, _, _| sim.log_next_frame());
+        // P: toggle use of predicted positions
+        kb_cmds.add_command(KeyCode::KeyP, "Toggle use of predicted positions", 500, |sim, _, _, _, _| sim.toggle_predicted());
         // R: reset the simulation
         kb_cmds.add_command(KeyCode::KeyR, "Reset particles", 250, |sim, _, _, _, _| sim.reset());
         // V: toggle viscosity
@@ -123,9 +125,9 @@ fn adj_gravity(
     msgs: &mut Single<&mut Messages>,
 ) {
     if shift {
-        sim.adj_gravity(-0.1);
+        sim.adj_gravity(-0.5);
     } else {
-        sim.adj_gravity(0.1);
+        sim.adj_gravity(0.5);
     }
     msgs.messages.push(MessageText {
         text: format!("Gravity: {:.1}", sim.gravity.y),
@@ -203,10 +205,11 @@ fn adj_smoothing_radius(
     _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
     msgs: &mut Single<&mut Messages>,
 ) {
+    let factor = sim.particle_size * 0.5;
     if shift {
-        sim.adj_smoothing_radius(0.01);
+        sim.adj_smoothing_radius(factor);
     } else {
-        sim.adj_smoothing_radius(-0.01);
+        sim.adj_smoothing_radius(-factor);
     }
     msgs.messages.push(MessageText {
         text: format!("Smoothing radius: {:.2}", sim.smoothing_radius),
@@ -228,7 +231,7 @@ fn watch_particle(
             .for_each(|(_, mut particle)| particle.watched = false);
     } else {
         particle_query.par_iter_mut().for_each(|(transform, mut particle)| {
-            if (transform.translation.xy() - cursor_pos).length() <= sim.particle_size {
+            if (transform.translation.xy() - cursor_pos).length() <= sim.particle_size / 2.0 {
                 println!(
                     "Watching particle {} @({},{}) density={}, velocity={:?}",
                     particle.id,
