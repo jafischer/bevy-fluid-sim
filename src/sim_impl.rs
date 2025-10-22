@@ -94,6 +94,8 @@ impl Simulation {
                 use_inertia: true,
                 use_viscosity: true,
                 use_heatmap: true,
+                show_arrows: false,
+                use_predicted_positions: false,
             },
         };
 

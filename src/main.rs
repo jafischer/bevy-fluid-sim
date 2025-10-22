@@ -76,9 +76,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn setup(mut commands: Commands, window: Single<&Window>) {
     // Create the simulation and add it to ECS.
-    let sim = Simulation::new(window.width(), window.height(), &mut commands);
+    let mut sim = Simulation::new(window.width(), window.height());
     let scale = sim.scale;
     commands.spawn((Camera2d, Transform::from_scale(Vec3::splat(scale))));
+    sim.spawn_particles(&mut commands);
     commands.spawn(sim);
 
     // FPS display.
