@@ -233,8 +233,12 @@ impl Simulation {
     }
 
     fn calculate_density(&self, id: usize) -> (f32, f32) {
-        let position = self.positions[id];
-        let mut density = 0.0;
+        let position = if self.debug.use_predicted_positions {
+            self.predicted_positions[id]
+        } else {
+            self.positions[id]
+        };
+        let mut density = 1.0;
 
         let bottom = -self.half_bounds_size.y;
         let left = -self.half_bounds_size.x;
@@ -253,8 +257,11 @@ impl Simulation {
                         if *i == id {
                             continue;
                         }
-                        // let neighbor_pos = self.predicted_positions[*i];
-                        let neighbor_pos = self.positions[*i];
+                        let neighbor_pos = if self.debug.use_predicted_positions {
+                            self.predicted_positions[*i]
+                        } else {
+                            self.positions[*i]
+                        };
                         let distance = (neighbor_pos - position).length().max(0.000000001);
                         let influence = self.smoothing_kernel(distance);
                         // let influence = self.density_kernel(distance);

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 use bevy::app::AppExit;
@@ -12,6 +12,7 @@ use crate::{MessageText, Messages};
 /// Defines a keyboard command to associate with a keypress.
 /// Each command can have a different repeat rate.
 pub struct KeyboardCommand {
+    pub key_text: String,
     pub description: String,
     pub last_action_time: Instant,
     pub interval: Duration,
@@ -33,13 +34,13 @@ type KeyboardAction = fn(
 /// Contains the collection of keyboard commands.
 #[derive(Component)]
 pub struct KeyboardCommands {
-    pub commands: HashMap<KeyCode, KeyboardCommand>,
+    pub commands: BTreeMap<KeyCode, KeyboardCommand>,
 }
 
 impl KeyboardCommands {
     pub fn create() -> Self {
         let mut kb_cmds = KeyboardCommands {
-            commands: HashMap::new(),
+            commands: BTreeMap::new(),
         };
 
         // Space: freeze / unfreeze particle motion.
@@ -56,7 +57,7 @@ impl KeyboardCommands {
         // F: toggle FPS
         kb_cmds.add_command(KeyCode::KeyF, "Toggle FPS", 500, toggle_fps);
         // G: increase/decrease gravity
-        kb_cmds.add_command(KeyCode::KeyG, "Decrease gravity (shift: increase)", 50, adj_gravity);
+        kb_cmds.add_command(KeyCode::KeyG, "Decrease gravity (shift: inc)", 50, adj_gravity);
         // H: toggle heat map
         kb_cmds.add_command(KeyCode::KeyH, "Toggle heatmap", 500, toggle_heatmap);
         // I: toggle inertia
@@ -64,13 +65,13 @@ impl KeyboardCommands {
         // L: log debug info in the next frame
         kb_cmds.add_command(KeyCode::KeyL, "Log debug info", 250, |sim, _, _, _, _| sim.log_next_frame());
         // P: toggle use of predicted positions
-        kb_cmds.add_command(KeyCode::KeyP, "Toggle use of predicted positions", 500, |sim, _, _, _, _| sim.toggle_predicted());
+        kb_cmds.add_command(KeyCode::KeyP, "Toggle use of predicted positions", 500, toggle_predicted);
         // R: reset the simulation
         kb_cmds.add_command(KeyCode::KeyR, "Reset particles", 250, |sim, _, _, _, _| sim.reset());
         // V: toggle viscosity
         kb_cmds.add_command(KeyCode::KeyV, "Toggle viscosity", 250, toggle_viscosity);
         // S: increase/decrease smoothing radius.
-        kb_cmds.add_command(KeyCode::KeyS, "Decrease smoothing radius (shift: increase)", 50, adj_smoothing_radius);
+        kb_cmds.add_command(KeyCode::KeyS, "Decrease smoothing radius (shift: inc)", 50, adj_smoothing_radius);
         // W: "watch" the particle(s) under the cursor (color them yellow).
         // Shift-W: clear all watched particles.
         kb_cmds.add_command(KeyCode::KeyW, "Watch (highlight) particle under cursor", 250, watch_particle);
@@ -84,12 +85,35 @@ impl KeyboardCommands {
         self.commands.insert(
             key,
             KeyboardCommand {
+                key_text: key_to_string(key),
                 description: description.into(),
                 last_action_time: Instant::now(),
                 interval: Duration::from_millis(interval_millis),
                 action,
             },
         );
+    }
+}
+
+fn key_to_string(key: KeyCode) -> String {
+    match key {
+        KeyCode::Digit1 => "1".into(),
+        KeyCode::KeyA => "A".into(),
+        KeyCode::KeyC => "C".into(),
+        KeyCode::KeyF => "F".into(),
+        KeyCode::KeyG => "G".into(),
+        KeyCode::KeyH => "H".into(),
+        KeyCode::KeyI => "I".into(),
+        KeyCode::KeyL => "L".into(),
+        KeyCode::KeyP => "P".into(),
+        KeyCode::KeyQ => "Q".into(),
+        KeyCode::KeyR => "R".into(),
+        KeyCode::KeyS => "S".into(),
+        KeyCode::KeyV => "V".into(),
+        KeyCode::KeyW => "W".into(),
+        KeyCode::KeyX => "X".into(),
+        KeyCode::Space => "Space".into(),
+        other => format!("{:?}", other),
     }
 }
 
@@ -183,6 +207,21 @@ fn reset_inertia(
     }
 }
 
+fn toggle_predicted(
+    sim: &mut Simulation,
+    _shift: bool,
+    _cursor_pos: &Vec2,
+    _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
+    msgs: &mut Single<&mut Messages>,
+) {
+    sim.toggle_predicted();
+    msgs.messages.push(MessageText {
+        text: format!("Prediction {}", if sim.debug.use_predicted_positions { "on" } else { "off" }),
+        start_time: Instant::now(),
+        duration: Duration::from_secs(1),
+    });
+}
+
 fn toggle_viscosity(
     sim: &mut Simulation,
     _shift: bool,
@@ -271,10 +310,12 @@ pub fn handle_keypress(
             }
         }
 
-        for (key, cmd) in kb_cmds.commands.iter() {
+        for (_key, cmd) in kb_cmds.commands.iter() {
             kb_help.push('\n');
-            kb_help.push_str(&format!("{key:?} - {}", cmd.description));
+            kb_help.push_str(&format!("{:5} - {}", cmd.key_text, cmd.description));
         }
+        kb_help.push_str("\nEsc   - Quit");
+
         messages.messages.push(MessageText {
             text: kb_help,
             start_time: Instant::now(),
