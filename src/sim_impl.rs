@@ -16,14 +16,17 @@ impl Simulation {
         // Pick a particle size such that the "fluid" will fill roughly 2/3 the window.
         let particle_size = (window_area * 0.67 / num_particles as f32).sqrt();
 
-        // The kernel math blows up with smoothing radius values > 1, we don't want to use the
-        // actual window coordinates. So I'm just hacking up a scale factor for now.
-        // In Sebastian's video, at 5:40, he shows a smoothing radius of 0.5
-        // that is about 12 particles wide:
+        // The smoothing radius is the region around each particle that influences its density & pressure.
+        // Particles outside of this smoothing radius will have no effect.
+        //
+        // However, the kernel math blows up with smoothing radius values > 1 (due to the exponentials),
+        // so we don't want to use the actual size in pixels.
+        //
+        // In Sebastian's video, at 5:40, he shows a smoothing radius of 0.5 that is about 12 particles wide:
         // (https://youtu.be/rSKMYc1CQHE?si=3sibErk0e4CYC5wF&t=340)
         // So we'll just scale down the grid size to 0.08333 (1/12).
-        // grid_size * scale = 0.08333
-        // --> scale = 0.08333 / grid_size, see, I can still do grade school math.
+        //   grid_size * scale = 0.08333
+        //   --> scale = 0.08333 / grid_size, see, I can still do grade school math.
         let scale = 0.08333 / particle_size;
         let particle_size = particle_size * scale;
         let smoothing_radius = ARGS.smoothing_radius;
