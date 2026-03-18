@@ -1,5 +1,6 @@
 mod args;
 mod keyboard;
+mod messages;
 mod particle;
 mod sim_impl;
 mod sim_settings;
@@ -9,7 +10,6 @@ mod spatial_hash;
 
 use std::ops::{Deref, DerefMut};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
 
 use bevy::color::palettes::basic::*;
 use bevy::color::palettes::css::GOLD;
@@ -19,23 +19,12 @@ use once_cell::sync::Lazy;
 
 use crate::args::ARGS;
 use crate::keyboard::{handle_keypress, KeyboardCommands};
+use crate::messages::{display_messages, spawn_messages, MessageText, Messages};
 use crate::particle::Particle;
 use crate::sim_struct::Simulation;
 
 #[derive(Component)]
 struct FpsText;
-
-#[derive(Clone)]
-struct MessageText {
-    pub text: String,
-    pub start_time: Instant,
-    pub duration: Duration,
-}
-
-#[derive(Component)]
-struct Messages {
-    pub messages: Vec<MessageText>,
-}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let win_size: Vec<_> = ARGS.win.split(',').collect();
@@ -111,24 +100,7 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
         },
     ));
 
-    // Dynamic message text
-    let mut messages = Messages { messages: vec![] };
-    messages.messages.push(MessageText {
-        text: "Left-click to attract, right-click to repel\n\nPress ? for keyboard commands".into(),
-        start_time: Instant::now(),
-        duration: Duration::from_secs(2),
-    });
-
-    commands.spawn((
-        Text2d::default(),
-        TextFont {
-            font_size: 20.0,
-            ..default()
-        },
-        TextLayout::new_with_justify(JustifyText::Center),
-        Transform::from_scale(Vec3::splat(scale)).with_translation(Vec3::new(0.0, 2.0, 1.0)),
-        messages,
-    ));
+    spawn_messages(&mut commands, scale);
 
     // Keyboard commands component
     commands.spawn(KeyboardCommands::create());
@@ -210,32 +182,21 @@ fn update_fps(mut query: Query<(&mut Text, &FpsText)>, time: Res<Time>, sim: Sin
     }
 }
 
-fn display_messages(mut query: Query<(&mut Text2d, &mut Messages)>) {
-    for (mut text, mut messages) in &mut query {
-        // Remove expired messages
-        messages.messages = messages
-            .messages
-            .iter()
-            .filter_map(|message_text| {
-                // if let Some(msg_text) = message_text.text.as_ref() {
-                let duration = Instant::now().duration_since(message_text.start_time);
-                if duration < message_text.duration {
-                    Some(message_text.clone())
-                } else {
-                    None
-                }
-            })
-            .collect();
-        **text = messages
-            .messages
-            .iter()
-            .map(|m| m.text.as_str())
-            .collect::<Vec<&str>>()
-            .join("\n");
+fn draw_debug_info(
+    mut gizmos: Gizmos,
+    sim: Single<&Simulation>,
+    particle_query: Query<(&mut Transform, &mut Particle)>,
+) {
+    if sim.debug.show_arrows {
+        particle_query.iter().for_each(|(transform, particle)| {
+            if particle.watched {
+                let arrow_end = transform.translation.xy() + sim.velocities[particle.id] * 2.0;
+                gizmos
+                    .arrow(transform.translation.xy().extend(0.0), arrow_end.extend(0.0), YELLOW)
+                    .with_tip_length(sim.particle_size);
+            }
+        });
     }
-}
-
-fn draw_debug_info(mut gizmos: Gizmos, sim: Single<&Simulation>) {
     if sim.debug.show_smoothing_radius {
         gizmos.circle_2d(sim.positions[0], sim.smoothing_radius, LIME);
     }

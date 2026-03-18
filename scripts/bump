@@ -5,11 +5,12 @@ main() {
   set_globals
   parse_options "$@"
 
-  cargo --list | grep set-version > /dev/null || {
+  # In WSL, 'set-version.exe' might show up, so exclude that:
+  cargo --list | grep 'set-version[^.]*$' > /dev/null || {
     log "Installing cargo-edit"
-    cargo install cargo-edit
+    do_or_die cargo install cargo-edit
   }
-  cargo set-version --bump "$BUMP_FIELD"
+  do_or_die cargo set-version --bump "$BUMP_FIELD"
 
   if [[ $COMMIT == "yes" ]]; then
     local extra_files version
@@ -32,9 +33,7 @@ main() {
 
 set_globals() {
   SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-
-  # shellcheck disable=SC2164
-  cd "${SCRIPT_DIR}/.."
+  do_or_die cd "${SCRIPT_DIR}/.."
 
   if [[ -e "${SCRIPT_DIR}/.default_bump_field" ]]; then
     BUMP_FIELD="$(cat "${SCRIPT_DIR}/.default_bump_field")"
@@ -45,12 +44,6 @@ set_globals() {
   else
     BUMP_FIELD="patch"
   fi
-
-  # Define some colors:
-  RED='\x1b[1;31m'
-  YELLOW='\x1b[1;33m'
-  CYAN='\x1b[1;36m'
-  NC='\x1b[0m' # No Color
 }
 
 parse_options() {
@@ -78,7 +71,7 @@ parse_options() {
 }
 
 usage() {
-  log "Increments the version in Cargo.toml"
+  log_heading "$(basename "$0")" "Increments the version in Cargo.toml"
   log ""
   log "Usage:"
   log "${YELLOW}$(basename "$0") [OPTIONS]"
@@ -96,21 +89,125 @@ usage() {
   exit
 }
 
+################################################################################
+# Common utility script functions
+# This is a common block of code inserted into all my scripts. I choose to do this rather than put them in a
+# separate `script_common` file, because having these functions in the same file helps with auto-completion in
+# the IDE.
+# So ignore any IDE or AI-review warnings about unused functions.
+define_colors() {
+  # Define some colors:
+  black='\x1b[0;30m'
+  red='\x1b[0;31m'
+  green='\x1b[0;32m'
+  yellow='\x1b[0;33m'
+  blue='\x1b[0;34m'
+  pink='\x1b[0;35m'
+  cyan='\x1b[0;36m'
+  grey='\x1b[0;37m'
+  BLACK='\x1b[1;30m'
+  RED='\x1b[1;31m'
+  GREEN='\x1b[1;32m'
+  YELLOW='\x1b[1;33m'
+  BLUE='\x1b[1;34m'
+  PINK='\x1b[1;35m'
+  CYAN='\x1b[1;36m'
+  WHITE='\x1b[1;37m'
+  NC='\x1b[0m' # No Color
+  CURSOR_UP='\x1b[A'
+  CLEAR_LINE='\x1b[K'
+
+  # Add dummy references to each color variable to avoid having to add "shellcheck disable=SC2034" comments on the unused ones.
+  echo "$black $red $green $yellow $blue $pink $cyan $grey $BLACK $RED $GREEN $YELLOW $BLUE $PINK $CYAN $WHITE $NC $CURSOR_UP $CLEAR_LINE" > /dev/null
+}
+
+install_if_necessary() {
+  local command="$1" package="$2" description="$3" ignore
+
+  if ! command -v "$command" >& /dev/null; then
+    if ! command -v brew >& /dev/null; then
+      log_heading "Installing brew (a utility for installing command line packages)."
+      read -rp "Press enter when ready, Ctrl-C to quit: " ignore
+      do_or_die /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    fi
+
+    log_heading "Installing $package ($description)."
+    # shellcheck disable=SC2034
+    read -rp "Press enter when ready, Ctrl-C to quit: " ignore
+    brew update
+    do_or_die brew install "$package"
+  fi
+}
+
+is_mac() {
+  [[ $(uname) == "Darwin" ]]
+}
+
+is_linux() {
+  [[ $(uname) == "Linux" ]]
+}
+
+is_wsl() {
+  is_linux && [[ -d /mnt/c ]]
+}
+
+get_platform() {
+  if is_mac; then
+    echo mac
+  elif is_wsl; then
+    echo wsl
+  elif is_linux; then
+    echo "linux-$(uname -m | sed -e 's/aarch64/arm64/; s/x86_64/amd64/')"
+  else
+    echo unknown-os
+  fi
+}
+
+# gdate is gnu date, which supports sub-second resolution
+# Install it via `brew install gdate`
+if command -v gdate >/dev/null; then
+  date_prefix() {
+    gdate +%H:%M:%S.%3N
+  }
+else
+  date_prefix() {
+    date +%T
+  }
+fi
+
 log() {
   echo -e "${CYAN}$*$NC" 1>&2
 }
 
+log_timestamp() {
+  echo -e "$(date_prefix) ${CYAN}$*$NC" 1>&2
+}
+
+log_stdout() {
+  echo -e "${LC_INFO}$*$NC"
+}
+
 log_heading() {
-  local heading="$*" ruler
-  ruler=$(echo -n "$heading" | sed -e 's/./=/g')
+  local heading="$1" extra="$2" ruler
+  # Strip ansi color codes out of the message when creating the ruler
+  ruler=$(echo -n "$heading" | sed -e 's/\\x1b\[[0-9;]*m//g' | sed -e 's/./=/g')
 
   echo -e "${CYAN}+=${ruler}=+$NC" 1>&2
-  echo -e "${CYAN}| $* |$NC" 1>&2
+  echo -e "${CYAN}| $heading |    $extra$NC" 1>&2
   echo -e "${CYAN}+=${ruler}=+$NC" 1>&2
 }
 
 log_error() {
   echo -e "${RED}$*$NC" 1>&2
+}
+
+log_no_newline() {
+  echo -en "${CYAN}$*$NC" 1>&2
+}
+
+log_debug() {
+  [[ -n "$DEBUG" ]] &&
+    echo -e "$cyan$*$NC" 1>&2
 }
 
 die() {
@@ -121,5 +218,9 @@ die() {
 do_or_die() {
   "$@" || die "Command failed: '$*'"
 }
+
+define_colors
+# End of common utility functions
+################################################################################
 
 main "$@"

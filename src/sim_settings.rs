@@ -47,6 +47,14 @@ impl Simulation {
         (0..self.num_particles).for_each(|i| self.velocities[i] = Vec2::splat(0.0));
     }
 
+    pub fn toggle_arrows(&mut self) {
+        self.debug.show_arrows = !self.debug.show_arrows;
+    }
+
+    pub fn toggle_predicted(&mut self) {
+        self.debug.use_predicted_positions = !self.debug.use_predicted_positions;
+    }
+
     pub fn toggle_viscosity(&mut self) {
         self.debug.use_viscosity = !self.debug.use_viscosity;
     }

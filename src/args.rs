@@ -25,8 +25,8 @@ pub struct Args {
     pub gravity: f32,
     #[arg(long, default_value = "1000")]
     pub pressure_multiplier: u32,
-    // #[arg(long, default_value = "25")]
-    // pub near_pressure_multiplier: u32,
+    #[arg(long, default_value = "25")]
+    pub near_pressure_multiplier: u32,
     #[arg(long, default_value = "0.5")]
     pub collision_damping: f32,
     /// Radius of the area-of-affect for mouse clicks, as a factor of particle size.

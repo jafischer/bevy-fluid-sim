@@ -113,6 +113,7 @@ impl Simulation {
 
         (density, near_density)
     }
+
     pub fn sfs_calculate_pressure_force(&self, id: usize) -> Vec2 {
         let density = self.densities[id].0;
         let density_near = self.densities[id].1;

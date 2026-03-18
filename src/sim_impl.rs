@@ -16,14 +16,17 @@ impl Simulation {
         // Pick a particle size such that the "fluid" will fill roughly 2/3 the window.
         let particle_size = (window_area * 0.67 / num_particles as f32).sqrt();
 
-        // The kernel math blows up with smoothing radius values > 1, we don't want to use the
-        // actual window coordinates. So I'm just hacking up a scale factor for now.
-        // In Sebastian's video, at 5:40, he shows a smoothing radius of 0.5
-        // that is about 12 particles wide:
+        // The smoothing radius is the region around each particle that influences its density & pressure.
+        // Particles outside of this smoothing radius will have no effect.
+        //
+        // However, the kernel math blows up with smoothing radius values > 1 (due to the exponentials),
+        // so we don't want to use the actual size in pixels.
+        //
+        // In Sebastian's video, at 5:40, he shows a smoothing radius of 0.5 that is about 12 particles wide:
         // (https://youtu.be/rSKMYc1CQHE?si=3sibErk0e4CYC5wF&t=340)
         // So we'll just scale down the grid size to 0.08333 (1/12).
-        // grid_size * scale = 0.08333
-        // --> scale = 0.08333 / grid_size, see, I can still do grade school math.
+        //   grid_size * scale = 0.08333
+        //   --> scale = 0.08333 / grid_size, see, I can still do grade school math.
         let scale = 0.08333 / particle_size;
         let particle_size = particle_size * scale;
         let smoothing_radius = ARGS.smoothing_radius;
@@ -54,8 +57,6 @@ impl Simulation {
             gravity: Vec2::new(0.0, -ARGS.gravity),
             target_density: 1.5 / scale,
             pressure_multiplier: ARGS.pressure_multiplier as f32,
-            near_pressure_multiplier: 100.0, // TODO: ARGS.near_pressure_multiplier as f32,
-            viscosity_strength: 0.0,
             speed_limit: ARGS.speed_limit,
             collision_damping: ARGS.collision_damping,
 
@@ -72,11 +73,13 @@ impl Simulation {
 
             // I've copied some stuff from Sebastian's Fluid-Sim compute shader code, but haven't
             // integrated it yet.
+            viscosity_strength: 0.0,
             prediction_factor: 1.0 / 120.0,
             predicted_positions,
             spatial_offsets,
             spatial_keys,
             spatial_indices,
+            near_pressure_multiplier: 100.0,
             poly6_scaling_factor: 4.0 / (PI * smoothing_radius.powf(8.0)),
             spiky_pow3_scaling_factor: 10.0 / (PI * smoothing_radius.powf(5.0)),
             spiky_pow2_scaling_factor: 6.0 / (PI * smoothing_radius.powf(4.0)),
@@ -94,6 +97,8 @@ impl Simulation {
                 use_inertia: true,
                 use_viscosity: true,
                 use_heatmap: true,
+                show_arrows: false,
+                use_predicted_positions: false,
             },
         };
 
@@ -231,8 +236,9 @@ impl Simulation {
     }
 
     fn calculate_density(&self, id: usize) -> (f32, f32) {
-        let position = self.positions[id];
-        let mut density = 0.0;
+        let position =
+            if self.debug.use_predicted_positions { self.predicted_positions[id] } else { self.positions[id] };
+        let mut density = 1.0;
 
         let bottom = -self.half_bounds_size.y;
         let left = -self.half_bounds_size.x;
@@ -251,11 +257,13 @@ impl Simulation {
                         if *i == id {
                             continue;
                         }
-                        // let neighbor_pos = self.predicted_positions[*i];
-                        let neighbor_pos = self.positions[*i];
+                        let neighbor_pos = if self.debug.use_predicted_positions {
+                            self.predicted_positions[*i]
+                        } else {
+                            self.positions[*i]
+                        };
                         let distance = (neighbor_pos - position).length().max(0.000000001);
                         let influence = self.smoothing_kernel(distance);
-                        // let influence = self.density_kernel(distance);
                         density += influence;
                     }
                 }

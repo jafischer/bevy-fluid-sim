@@ -15,8 +15,6 @@ pub struct Simulation {
     pub gravity: Vec2,
     pub target_density: f32,
     pub pressure_multiplier: f32,
-    pub near_pressure_multiplier: f32,
-    pub viscosity_strength: f32,
     pub speed_limit: f32,
     pub collision_damping: f32,
 
@@ -34,11 +32,13 @@ pub struct Simulation {
     pub regions: Vec<Vec<Vec<usize>>>,
 
     // Fluid-Sim fields:
+    pub viscosity_strength: f32,
     pub prediction_factor: f32,
     pub predicted_positions: Vec<Vec2>,
     pub spatial_offsets: Vec<u32>,
     pub spatial_keys: Vec<u32>,
     pub spatial_indices: Vec<[u32; 3]>,
+    pub near_pressure_multiplier: f32,
     pub poly6_scaling_factor: f32,
     pub spiky_pow3_scaling_factor: f32,
     pub spiky_pow2_scaling_factor: f32,
@@ -53,7 +53,6 @@ impl Debug for Simulation {
         writeln!(f, "Simulation:")?;
         writeln!(f, "    smoothing_radius: {}", self.smoothing_radius)?;
         writeln!(f, "    num_particles: {}", self.num_particles)?;
-        writeln!(f, "    scale: {}", self.scale)?;
         writeln!(f, "    particle_size: {}", self.particle_size)?;
         writeln!(f, "    gravity: {}", self.gravity)?;
         writeln!(f, "    target_density: {}", self.target_density)?;
@@ -74,4 +73,6 @@ pub struct DebugParams {
     pub use_inertia: bool,
     pub use_viscosity: bool,
     pub use_heatmap: bool,
+    pub show_arrows: bool,
+    pub use_predicted_positions: bool,
 }
