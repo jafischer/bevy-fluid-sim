@@ -1,4 +1,5 @@
 use std::time::{Duration, Instant};
+
 use bevy::math::Vec3;
 use bevy::prelude::{default, Commands, Component, JustifyText, Query, Text2d, TextFont, TextLayout, Transform};
 
@@ -13,7 +14,6 @@ pub struct MessageText {
 pub struct Messages {
     pub messages: Vec<MessageText>,
 }
-
 
 pub fn spawn_messages(commands: &mut Commands, scale: f32) {
     // Dynamic message text

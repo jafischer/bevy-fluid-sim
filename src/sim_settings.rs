@@ -46,7 +46,7 @@ impl Simulation {
     pub fn reset_inertia(&mut self) {
         (0..self.num_particles).for_each(|i| self.velocities[i] = Vec2::splat(0.0));
     }
-    
+
     pub fn toggle_arrows(&mut self) {
         self.debug.show_arrows = !self.debug.show_arrows;
     }

@@ -57,8 +57,6 @@ impl Simulation {
             gravity: Vec2::new(0.0, -ARGS.gravity),
             target_density: 1.5 / scale,
             pressure_multiplier: ARGS.pressure_multiplier as f32,
-            near_pressure_multiplier: 100.0, // TODO: ARGS.near_pressure_multiplier as f32,
-            viscosity_strength: 0.0,
             speed_limit: ARGS.speed_limit,
             collision_damping: ARGS.collision_damping,
 
@@ -75,11 +73,13 @@ impl Simulation {
 
             // I've copied some stuff from Sebastian's Fluid-Sim compute shader code, but haven't
             // integrated it yet.
+            viscosity_strength: 0.0,
             prediction_factor: 1.0 / 120.0,
             predicted_positions,
             spatial_offsets,
             spatial_keys,
             spatial_indices,
+            near_pressure_multiplier: 100.0,
             poly6_scaling_factor: 4.0 / (PI * smoothing_radius.powf(8.0)),
             spiky_pow3_scaling_factor: 10.0 / (PI * smoothing_radius.powf(5.0)),
             spiky_pow2_scaling_factor: 6.0 / (PI * smoothing_radius.powf(4.0)),
@@ -236,11 +236,8 @@ impl Simulation {
     }
 
     fn calculate_density(&self, id: usize) -> (f32, f32) {
-        let position = if self.debug.use_predicted_positions {
-            self.predicted_positions[id]
-        } else {
-            self.positions[id]
-        };
+        let position =
+            if self.debug.use_predicted_positions { self.predicted_positions[id] } else { self.positions[id] };
         let mut density = 1.0;
 
         let bottom = -self.half_bounds_size.y;
@@ -267,7 +264,6 @@ impl Simulation {
                         };
                         let distance = (neighbor_pos - position).length().max(0.000000001);
                         let influence = self.smoothing_kernel(distance);
-                        // let influence = self.density_kernel(distance);
                         density += influence;
                     }
                 }
