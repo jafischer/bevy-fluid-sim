@@ -70,7 +70,6 @@ pub struct DebugParams {
     pub show_fps: bool,
     pub show_smoothing_radius: bool,
     pub show_region_grid: bool,
-    pub use_inertia: bool,
     pub use_viscosity: bool,
     pub use_heatmap: bool,
     pub show_arrows: bool,

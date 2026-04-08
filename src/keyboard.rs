@@ -57,15 +57,17 @@ impl KeyboardCommands {
         // F: toggle FPS
         kb_cmds.add_command(KeyCode::KeyF, "Toggle FPS", 500, toggle_fps);
         // G: increase/decrease gravity
-        kb_cmds.add_command(KeyCode::KeyG, "Decrease gravity (shift: inc)", 50, adj_gravity);
+        kb_cmds.add_command(KeyCode::KeyG, "Decrease gravity (shift: inc)", 100, adj_gravity);
         // H: toggle heat map
         kb_cmds.add_command(KeyCode::KeyH, "Toggle heatmap", 500, toggle_heatmap);
         // I: toggle inertia
-        kb_cmds.add_command(KeyCode::KeyI, "Reset inertia (shift: toggle inertia)", 250, reset_inertia);
+        kb_cmds.add_command(KeyCode::KeyI, "Reset inertia", 250, reset_inertia);
         // L: log debug info in the next frame
         kb_cmds.add_command(KeyCode::KeyL, "Log debug info", 250, |sim, _, _, _, _| sim.log_next_frame());
         // P: toggle use of predicted positions
-        kb_cmds.add_command(KeyCode::KeyP, "Toggle use of predicted positions", 500, toggle_predicted);
+        kb_cmds.add_command(KeyCode::KeyP, "Decrease pressure multiplier (shift: inc)", 10, adj_pressure);
+        // O: toggle use of predicted positions
+        kb_cmds.add_command(KeyCode::KeyO, "Toggle use of predicted positions", 500, toggle_predicted);
         // R: reset the simulation
         kb_cmds.add_command(KeyCode::KeyR, "Reset particles", 250, |sim, _, _, _, _| sim.reset());
         // V: toggle viscosity
@@ -99,19 +101,31 @@ fn key_to_string(key: KeyCode) -> String {
     match key {
         KeyCode::Digit1 => "1".into(),
         KeyCode::KeyA => "A".into(),
+        KeyCode::KeyB => "B".into(),
         KeyCode::KeyC => "C".into(),
+        KeyCode::KeyD => "D".into(),
+        KeyCode::KeyE => "E".into(),
         KeyCode::KeyF => "F".into(),
         KeyCode::KeyG => "G".into(),
         KeyCode::KeyH => "H".into(),
         KeyCode::KeyI => "I".into(),
+        KeyCode::KeyJ => "J".into(),
+        KeyCode::KeyK => "K".into(),
         KeyCode::KeyL => "L".into(),
+        KeyCode::KeyM => "M".into(),
+        KeyCode::KeyN => "N".into(),
+        KeyCode::KeyO => "O".into(),
         KeyCode::KeyP => "P".into(),
         KeyCode::KeyQ => "Q".into(),
         KeyCode::KeyR => "R".into(),
         KeyCode::KeyS => "S".into(),
+        KeyCode::KeyT => "T".into(),
+        KeyCode::KeyU => "U".into(),
         KeyCode::KeyV => "V".into(),
         KeyCode::KeyW => "W".into(),
         KeyCode::KeyX => "X".into(),
+        KeyCode::KeyY => "Y".into(),
+        KeyCode::KeyZ => "Z".into(),
         KeyCode::Space => "Space".into(),
         other => format!("{:?}", other),
     }
@@ -160,6 +174,25 @@ fn adj_gravity(
     });
 }
 
+fn adj_pressure(
+    sim: &mut Simulation,
+    shift: bool,
+    _cursor_pos: &Vec2,
+    _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
+    msgs: &mut Single<&mut Messages>,
+) {
+    if shift {
+        sim.adj_pressure(true);
+    } else {
+        sim.adj_pressure(false);
+    }
+    msgs.messages.push(MessageText {
+        text: format!("Pressure multiplier: {:.1}", sim.pressure_multiplier),
+        start_time: Instant::now(),
+        duration: Duration::from_secs(1),
+    });
+}
+
 fn toggle_heatmap(
     sim: &mut Simulation,
     _shift: bool,
@@ -190,21 +223,12 @@ fn reset_inertia(
     _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
     msgs: &mut Single<&mut Messages>,
 ) {
-    if shift {
-        sim.toggle_inertia();
-        msgs.messages.push(MessageText {
-            text: format!("Inertia {}", if sim.debug.use_inertia { "on" } else { "off" }),
-            start_time: Instant::now(),
-            duration: Duration::from_secs(1),
-        });
-    } else {
-        sim.reset_inertia();
-        msgs.messages.push(MessageText {
-            text: "Inertia reset".into(),
-            start_time: Instant::now(),
-            duration: Duration::from_secs(1),
-        });
-    }
+    sim.reset_inertia();
+    msgs.messages.push(MessageText {
+        text: "Inertia reset".into(),
+        start_time: Instant::now(),
+        duration: Duration::from_secs(1),
+    });
 }
 
 fn toggle_predicted(

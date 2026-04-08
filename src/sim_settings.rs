@@ -39,10 +39,6 @@ impl Simulation {
         self.debug.use_heatmap = !self.debug.use_heatmap;
     }
 
-    pub fn toggle_inertia(&mut self) {
-        self.debug.use_inertia = !self.debug.use_inertia;
-    }
-
     pub fn reset_inertia(&mut self) {
         (0..self.num_particles).for_each(|i| self.velocities[i] = Vec2::splat(0.0));
     }
@@ -71,5 +67,9 @@ impl Simulation {
 
     pub fn adj_gravity(&mut self, increment: f32) {
         self.gravity.y = (self.gravity.y + increment).min(0.0);
+    }
+
+    pub fn adj_pressure(&mut self, increase: bool) {
+        self.pressure_multiplier = if increase { self.pressure_multiplier * 1.10 } else { self.pressure_multiplier / 1.10 };
     }
 }

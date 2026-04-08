@@ -94,7 +94,6 @@ impl Simulation {
                 show_fps: false,
                 show_smoothing_radius: false,
                 show_region_grid: false,
-                use_inertia: true,
                 use_viscosity: true,
                 use_heatmap: true,
                 show_arrows: false,
@@ -287,20 +286,15 @@ impl Simulation {
     fn calculate_pressure(&self, id: usize, delta: f32) -> Vec2 {
         let mut velocity = self.velocities[id];
         let pressure_force = self.pressure_force(id) * delta;
-        // let pressure_force = self.sfs_calculate_pressure_force(id) * delta;
         let gravity_force = self.external_forces(id) * delta;
 
-        if self.debug.use_inertia {
-            // Poor man's viscosity:
-            if self.debug.use_viscosity {
-                velocity = (velocity + pressure_force).clamp_length_max(self.speed_limit * self.particle_size * delta);
-            } else {
-                velocity += pressure_force;
-            }
-            velocity += gravity_force;
+        // Poor man's viscosity:
+        if self.debug.use_viscosity {
+            velocity = (velocity + pressure_force).clamp_length_max(self.speed_limit * self.particle_size * delta);
         } else {
-            velocity = pressure_force + gravity_force;
+            velocity += pressure_force;
         }
+        velocity += gravity_force;
 
         velocity
     }
