@@ -28,7 +28,7 @@ bevy_dynamic = ["bevy/dynamic_linking"]
 # Where the path comes from `rustc --print=sysroot` (with /lib appended).
 # On Windows (as an example):
 # PATH=%USERPROFILE\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\;.\target\debug\deps\;.\target\release\deps
-bevy = { version = "0.15", features = ["multi_threaded"] }
+bevy = { version = "0.18", features = ["multi_threaded"] }
 # Command line arg processing.
 clap = { version = "4.5.8", features = ["derive"] }
 # once_cell: lazily-initialized statics

@@ -218,7 +218,7 @@ fn toggle_heatmap(
 
 fn reset_inertia(
     sim: &mut Simulation,
-    shift: bool,
+    _shift: bool,
     _cursor_pos: &Vec2,
     _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
     msgs: &mut Single<&mut Messages>,
@@ -311,7 +311,7 @@ fn watch_particle(
 
 pub fn handle_keypress(
     kb: Res<ButtonInput<KeyCode>>,
-    mut app_exit: EventWriter<AppExit>,
+    mut app_exit: MessageWriter<AppExit>,
     mut sim: Single<&mut Simulation>,
     camera_query: Single<(&Camera, &GlobalTransform)>,
     mut particle_query: Query<(&mut Transform, &mut Particle)>,
@@ -321,7 +321,7 @@ pub fn handle_keypress(
 ) {
     // Esc / Q: quit the app
     if kb.pressed(KeyCode::Escape) || kb.pressed(KeyCode::KeyQ) {
-        app_exit.send(AppExit::Success);
+        app_exit.write(AppExit::Success);
     }
 
     // ?: display help

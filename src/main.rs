@@ -31,8 +31,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if win_size.len() != 2 {
         return Err("Incorrect window size".into());
     }
-    let width: u16 = win_size[0].parse()?;
-    let height: u16 = win_size[1].parse()?;
+    let width: u32 = win_size[0].parse()?;
+    let height: u32 = win_size[1].parse()?;
 
     App::new()
         // Background color
@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_plugins((DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 present_mode: PresentMode::AutoNoVsync,
-                resolution: WindowResolution::new(width as f32, height as f32),
+                resolution: WindowResolution::new(width, height),
                 ..default()
             }),
             ..default()
@@ -92,7 +92,7 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
             ..default()
         },
         // Set the justification of the Text
-        TextLayout::new_with_justify(JustifyText::Right),
+        TextLayout::new_with_justify(Justify::Right),
         Node {
             position_type: PositionType::Absolute,
             right: Val::Px(5.0),
@@ -243,7 +243,7 @@ fn handle_mouse_clicks(
     sim.interaction_input_point = point;
 }
 
-fn on_resize(mut resize_reader: EventReader<WindowResized>, mut sim: Single<&mut Simulation>) {
+fn on_resize(mut resize_reader: MessageReader<WindowResized>, mut sim: Single<&mut Simulation>) {
     for e in resize_reader.read() {
         // When resolution is being changed
         sim.on_resize(e.width, e.height);
