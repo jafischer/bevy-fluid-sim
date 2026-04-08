@@ -31,20 +31,14 @@ impl Simulation {
         let particle_size = particle_size * scale;
         let smoothing_radius = ARGS.smoothing_radius;
 
-        let mut positions = vec![];
-        positions.resize_with(num_particles, Default::default);
-        let mut velocities = vec![];
-        velocities.resize_with(num_particles, Default::default);
-        let mut densities = vec![];
-        densities.resize_with(num_particles, Default::default);
-        let mut spatial_offsets = vec![];
-        spatial_offsets.resize_with(num_particles, Default::default);
-        let mut spatial_indices = vec![];
-        spatial_indices.resize_with(num_particles, Default::default);
-        let mut spatial_keys = vec![];
-        spatial_keys.resize_with(num_particles, Default::default);
-        let mut predicted_positions = vec![];
-        predicted_positions.resize_with(num_particles, Default::default);
+        // Preallocate the vectors.
+        let positions = vec![Vec2::default(); num_particles];
+        let velocities = vec![Vec2::default(); num_particles];
+        let densities = vec![(0f32, 0f32); num_particles];
+        let spatial_offsets = vec![0u32; num_particles];
+        let spatial_indices = vec![[0u32, 0u32, 0u32]; num_particles];
+        let spatial_keys = vec![0u32; num_particles];
+        let predicted_positions = vec![Vec2::default(); num_particles];
 
         let sim = Simulation {
             smoothing_radius,
@@ -409,7 +403,8 @@ impl Simulation {
     fn external_forces(&self, id: usize) -> Vec2 {
         let pos = self.positions[id];
         let velocity = self.velocities[id];
-        // Input interactions modify gravity
+
+        // Mouse buttons generate pseudo gravity/repulsion at mouse location.
         if self.interaction_input_strength != 0.0 {
             let input_point_offset = self.interaction_input_point - pos;
             let sqr_distance = input_point_offset.dot(input_point_offset);
