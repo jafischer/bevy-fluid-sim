@@ -249,12 +249,12 @@ impl Simulation {
         }
     }
 
-    fn calculate_density(&self, id: usize) -> (f32, f32) {
+    fn calculate_density(&self, particle_id: usize) -> (f32, f32) {
         let position =
-            if self.debug.use_predicted_positions { self.predicted_positions[id] } else { self.positions[id] };
+            if self.debug.use_predicted_positions { self.predicted_positions[particle_id] } else { self.positions[particle_id] };
         let mut density = 1.0;
 
-        for i in self.neighbor_particles(id) {
+        for i in self.neighbor_particles(particle_id) {
             let neighbor_pos =
                 if self.debug.use_predicted_positions { self.predicted_positions[i] } else { self.positions[i] };
             let distance = (neighbor_pos - position).length().max(0.000000001);
@@ -276,10 +276,10 @@ impl Simulation {
             .collect();
     }
 
-    fn calculate_pressure(&self, id: usize, delta: f32) -> Vec2 {
-        let mut velocity = self.velocities[id];
-        let pressure_force = self.pressure_force(id) * delta;
-        let gravity_force = self.external_forces(id) * delta;
+    fn calculate_pressure(&self, particle_id: usize, delta: f32) -> Vec2 {
+        let mut velocity = self.velocities[particle_id];
+        let pressure_force = self.pressure_force(particle_id) * delta;
+        let gravity_force = self.external_forces(particle_id) * delta;
 
         // Poor man's viscosity:
         if self.debug.use_viscosity {
@@ -306,7 +306,7 @@ impl Simulation {
             if in_bounds { self.regions[region_row as usize][region_col as usize].as_slice() } else { &[] }
                 .iter()
                 .copied()
-                .filter(move |&id| id != particle_id)
+                .filter(move |&neighbor_id| neighbor_id != particle_id)
         })
     }
 
@@ -316,9 +316,9 @@ impl Simulation {
         }
     }
 
-    fn apply_velocity(&mut self, id: usize) {
-        self.positions[id] = self.positions[id] + self.velocities[id];
-        self.resolve_collisions(id);
+    fn apply_velocity(&mut self, particle_id: usize) {
+        self.positions[particle_id] = self.positions[particle_id] + self.velocities[particle_id];
+        self.resolve_collisions(particle_id);
     }
 
     fn smoothing_kernel(&self, distance: f32) -> f32 {
@@ -345,14 +345,14 @@ impl Simulation {
         (density_error1 + density_error2) * self.pressure_multiplier / 2.0
     }
 
-    fn resolve_collisions(&mut self, id: usize) {
-        if self.positions[id].x.abs() > self.half_bounds_size.x {
-            self.positions[id].x = self.half_bounds_size.x * self.positions[id].x.signum();
-            self.velocities[id].x *= -self.collision_damping;
+    fn resolve_collisions(&mut self, particle_id: usize) {
+        if self.positions[particle_id].x.abs() > self.half_bounds_size.x {
+            self.positions[particle_id].x = self.half_bounds_size.x * self.positions[particle_id].x.signum();
+            self.velocities[particle_id].x *= -self.collision_damping;
         }
-        if self.positions[id].y.abs() > self.half_bounds_size.y {
-            self.positions[id].y = self.half_bounds_size.y * self.positions[id].y.signum();
-            self.velocities[id].y *= -self.collision_damping;
+        if self.positions[particle_id].y.abs() > self.half_bounds_size.y {
+            self.positions[particle_id].y = self.half_bounds_size.y * self.positions[particle_id].y.signum();
+            self.velocities[particle_id].y *= -self.collision_damping;
         }
     }
 
@@ -361,8 +361,8 @@ impl Simulation {
         let position = self.positions[particle_id];
         let density = self.densities[particle_id].0;
 
-        for id in self.neighbor_particles(particle_id) {
-            let offset = self.positions[id] - position;
+        for neighbor_id in self.neighbor_particles(particle_id) {
+            let offset = self.positions[neighbor_id] - position;
             let distance = offset.length().max(0.000001);
             if distance >= self.smoothing_radius {
                 continue;
@@ -371,16 +371,16 @@ impl Simulation {
             // Unit vector in the direction of the other particle.
             let direction = offset / distance;
             let slope = self.smoothing_kernel_derivative(distance);
-            let pressure = self.shared_pressure(density, self.densities[id].0);
-            pressure_force += direction * slope * pressure / self.densities[id].0;
+            let pressure = self.shared_pressure(density, self.densities[neighbor_id].0);
+            pressure_force += direction * slope * pressure / self.densities[neighbor_id].0;
         }
 
         pressure_force
     }
 
-    fn external_forces(&self, id: usize) -> Vec2 {
-        let pos = self.positions[id];
-        let velocity = self.velocities[id];
+    fn external_forces(&self, particle_id: usize) -> Vec2 {
+        let pos = self.positions[particle_id];
+        let velocity = self.velocities[particle_id];
 
         // Mouse buttons generate pseudo gravity/repulsion at mouse location.
         if self.interaction_input_strength != 0.0 {
