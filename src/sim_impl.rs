@@ -156,6 +156,20 @@ impl Simulation {
         }
     }
 
+    pub fn on_resize(&mut self, window_width: f32, window_height: f32) {
+        self.half_bounds_size = Vec2::new(window_width, window_height) * self.scale / 2.0 - self.particle_size / 2.0;
+    }
+
+    pub fn end_frame(&mut self) {
+        if self.debug.log_frame == self.debug.current_frame {
+            println!("{self:?}");
+        }
+        self.debug.current_frame += 1;
+        if self.debug.frames_to_show > 0 {
+            self.debug.frames_to_show -= 1;
+        }
+    }
+
     /// This is my simplistic alternative to the funky "spatial hash" code.
     /// I just divide the space up into regions the size of the smoothing hash, and
     /// keep track of the particles in each region. Wasteful of memory, but it's simple and
@@ -240,39 +254,17 @@ impl Simulation {
             if self.debug.use_predicted_positions { self.predicted_positions[id] } else { self.positions[id] };
         let mut density = 1.0;
 
-        let bottom = -self.half_bounds_size.y;
-        let left = -self.half_bounds_size.x;
-        let particle_row = ((self.positions[id].y - bottom) / self.smoothing_radius) as usize;
-        let particle_col = ((self.positions[id].x - left) / self.smoothing_radius) as usize;
-
-        for offset in OFFSETS_2D {
-            let region_row = particle_row as i32 + offset.0;
-            let region_col = particle_col as i32 + offset.1;
-            if region_row >= 0 && region_col >= 0 {
-                let region_row = region_row as usize;
-                let region_col = region_col as usize;
-                if region_row < self.region_rows && region_col < self.region_cols {
-                    let row = &self.regions[region_row];
-                    for i in &row[region_col] {
-                        if *i == id {
-                            continue;
-                        }
-                        let neighbor_pos = if self.debug.use_predicted_positions {
-                            self.predicted_positions[*i]
-                        } else {
-                            self.positions[*i]
-                        };
-                        let distance = (neighbor_pos - position).length().max(0.000000001);
-                        let influence = self.smoothing_kernel(distance);
-                        density += influence;
-                    }
-                }
-            }
+        for i in self.neighbor_particles(id) {
+            let neighbor_pos =
+                if self.debug.use_predicted_positions { self.predicted_positions[i] } else { self.positions[i] };
+            let distance = (neighbor_pos - position).length().max(0.000000001);
+            let influence = self.smoothing_kernel(distance);
+            density += influence;
         }
         (density, density)
     }
 
-    pub fn calculate_pressures(&mut self, delta: f32) {
+    fn calculate_pressures(&mut self, delta: f32) {
         self.velocities = (0..self.num_particles)
             .into_par_iter()
             .map(|i| self.calculate_pressure(i, delta))
@@ -300,7 +292,25 @@ impl Simulation {
         velocity
     }
 
-    pub fn apply_velocities(&mut self) {
+    fn neighbor_particles(&self, particle_id: usize) -> impl Iterator<Item = usize> + '_ {
+        let particle_row = ((self.positions[particle_id].y - -self.half_bounds_size.y) / self.smoothing_radius) as i32;
+        let particle_col = ((self.positions[particle_id].x - -self.half_bounds_size.x) / self.smoothing_radius) as i32;
+
+        OFFSETS_2D.iter().flat_map(move |offset| {
+            let region_row = particle_row + offset.0;
+            let region_col = particle_col + offset.1;
+            let in_bounds = region_row >= 0
+                && (region_row as usize) < self.region_rows
+                && region_col >= 0
+                && (region_col as usize) < self.region_cols;
+            if in_bounds { self.regions[region_row as usize][region_col as usize].as_slice() } else { &[] }
+                .iter()
+                .copied()
+                .filter(move |&id| id != particle_id)
+        })
+    }
+
+    fn apply_velocities(&mut self) {
         for i in 0..self.num_particles {
             self.apply_velocity(i);
         }
@@ -309,20 +319,6 @@ impl Simulation {
     fn apply_velocity(&mut self, id: usize) {
         self.positions[id] = self.positions[id] + self.velocities[id];
         self.resolve_collisions(id);
-    }
-
-    pub fn on_resize(&mut self, window_width: f32, window_height: f32) {
-        self.half_bounds_size = Vec2::new(window_width, window_height) * self.scale / 2.0 - self.particle_size / 2.0;
-    }
-
-    pub fn end_frame(&mut self) {
-        if self.debug.log_frame == self.debug.current_frame {
-            println!("{self:?}");
-        }
-        self.debug.current_frame += 1;
-        if self.debug.frames_to_show > 0 {
-            self.debug.frames_to_show -= 1;
-        }
     }
 
     fn smoothing_kernel(&self, distance: f32) -> f32 {
@@ -352,11 +348,11 @@ impl Simulation {
     fn resolve_collisions(&mut self, id: usize) {
         if self.positions[id].x.abs() > self.half_bounds_size.x {
             self.positions[id].x = self.half_bounds_size.x * self.positions[id].x.signum();
-            self.velocities[id].x *= -1.0 * self.collision_damping;
+            self.velocities[id].x *= -self.collision_damping;
         }
         if self.positions[id].y.abs() > self.half_bounds_size.y {
             self.positions[id].y = self.half_bounds_size.y * self.positions[id].y.signum();
-            self.velocities[id].y *= -1.0 * self.collision_damping;
+            self.velocities[id].y *= -self.collision_damping;
         }
     }
 
@@ -365,38 +361,18 @@ impl Simulation {
         let position = self.positions[particle_id];
         let density = self.densities[particle_id].0;
 
-        let bottom = -self.half_bounds_size.y;
-        let left = -self.half_bounds_size.x;
-        let particle_row = ((self.positions[particle_id].y - bottom) / self.smoothing_radius) as usize;
-        let particle_col = ((self.positions[particle_id].x - left) / self.smoothing_radius) as usize;
-
-        for offset in OFFSETS_2D {
-            let region_row = particle_row as i32 + offset.0;
-            let region_col = particle_col as i32 + offset.1;
-            if region_row >= 0 && region_col >= 0 {
-                let region_row = region_row as usize;
-                let region_col = region_col as usize;
-                if region_row < self.region_rows && region_col < self.region_cols {
-                    let row = &self.regions[region_row];
-                    for &id in &row[region_col] {
-                        if id == particle_id {
-                            continue;
-                        }
-
-                        let offset = self.positions[id] - position;
-                        let distance = offset.length().max(0.000001);
-                        if distance >= self.smoothing_radius {
-                            continue;
-                        }
-
-                        // Unit vector in the direction of the other particle.
-                        let direction = offset / distance;
-                        let slope = self.smoothing_kernel_derivative(distance);
-                        let pressure = self.shared_pressure(density, self.densities[id].0);
-                        pressure_force += direction * slope * pressure / self.densities[id].0;
-                    }
-                }
+        for id in self.neighbor_particles(particle_id) {
+            let offset = self.positions[id] - position;
+            let distance = offset.length().max(0.000001);
+            if distance >= self.smoothing_radius {
+                continue;
             }
+
+            // Unit vector in the direction of the other particle.
+            let direction = offset / distance;
+            let slope = self.smoothing_kernel_derivative(distance);
+            let pressure = self.shared_pressure(density, self.densities[id].0);
+            pressure_force += direction * slope * pressure / self.densities[id].0;
         }
 
         pressure_force

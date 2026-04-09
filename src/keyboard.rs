@@ -309,6 +309,8 @@ fn watch_particle(
     }
 }
 
+// No real choice about the number of arguments here. ECS gonna ECS.
+#[allow(clippy::too_many_arguments)]
 pub fn handle_keypress(
     kb: Res<ButtonInput<KeyCode>>,
     mut app_exit: MessageWriter<AppExit>,

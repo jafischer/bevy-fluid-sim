@@ -124,8 +124,8 @@ impl Simulation {
         let pos = self.predicted_positions[id];
         let origin_cell = get_cell_2d(&pos, self.smoothing_radius);
 
-        for i in 0..9 {
-            let hash = hash_cell_2d(&(origin_cell.0 + OFFSETS_2D[i].0, origin_cell.1 + OFFSETS_2D[i].1));
+        for offset in &OFFSETS_2D {
+            let hash = hash_cell_2d(&(origin_cell.0 + offset.0, origin_cell.1 + offset.1));
             let key = key_from_hash(hash, self.num_particles as u32);
             let mut curr_index = self.spatial_offsets[key as usize];
 
@@ -178,8 +178,8 @@ impl Simulation {
         let mut viscosity_force = Vec2::default();
         let velocity = self.velocities[id];
 
-        for i in 0..9 {
-            let hash = hash_cell_2d(&(origin_cell.0 + OFFSETS_2D[i].0, origin_cell.1 + OFFSETS_2D[i].1));
+        for offset in &OFFSETS_2D {
+            let hash = hash_cell_2d(&(origin_cell.0 + offset.0, origin_cell.1 + offset.1));
             let key = key_from_hash(hash, self.num_particles as u32);
             let mut curr_index = self.spatial_offsets[key as usize];
 
