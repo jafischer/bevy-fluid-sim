@@ -163,9 +163,9 @@ fn adj_gravity(
     msgs: &mut Single<&mut Messages>,
 ) {
     if shift {
-        sim.adj_gravity(-0.5);
-    } else {
         sim.adj_gravity(0.5);
+    } else {
+        sim.adj_gravity(-0.5);
     }
     msgs.messages.push(MessageText {
         text: format!("Gravity: {:.1}", sim.gravity.y),

@@ -48,7 +48,7 @@ impl Simulation {
             particle_size,
             scale,
             half_bounds_size: Vec2::new(window_width, window_height) * scale / 2.0 - particle_size / 2.0,
-            gravity: Vec2::new(0.0, -ARGS.gravity),
+            gravity: Vec2::new(0.0, ARGS.gravity),
             target_density: 1.5 / scale,
             pressure_multiplier: ARGS.pressure_multiplier as f32,
             speed_limit: ARGS.speed_limit,
@@ -394,12 +394,12 @@ impl Simulation {
 
                 let gravity_weight = 1.0 - (centre_t * (self.interaction_input_strength / 10.0).clamp(0.0, 1.0));
                 let mut accel =
-                    self.gravity * gravity_weight + dir_to_centre * centre_t * self.interaction_input_strength;
+                    -self.gravity * gravity_weight + dir_to_centre * centre_t * self.interaction_input_strength;
                 accel -= velocity * centre_t;
                 return accel * self.scale;
             }
         }
 
-        self.gravity * self.scale
+        -self.gravity * self.scale
     }
 }

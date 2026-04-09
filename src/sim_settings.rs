@@ -66,7 +66,7 @@ impl Simulation {
     }
 
     pub fn adj_gravity(&mut self, increment: f32) {
-        self.gravity.y = (self.gravity.y + increment).min(0.0);
+        self.gravity.y += increment;
     }
 
     pub fn adj_pressure(&mut self, increase: bool) {
