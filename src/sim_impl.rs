@@ -13,8 +13,8 @@ impl Simulation {
     pub fn new(window_width: f32, window_height: f32) -> Simulation {
         let num_particles = ARGS.num as usize;
         let window_area = window_width * window_height;
-        // Pick a particle size such that the "fluid" will fill roughly 2/3 the window.
-        let particle_size = (window_area * 0.67 / num_particles as f32).sqrt();
+        // Pick a particle size relative to the window size.
+        let particle_size = (window_area * 0.5 / num_particles as f32).sqrt();
 
         // The smoothing radius is the region around each particle that influences its density & pressure.
         // Particles outside of this smoothing radius will have no effect.
@@ -120,10 +120,17 @@ impl Simulation {
     }
 
     pub fn place_particles(&mut self) {
-        let bounds = self.half_bounds_size * 0.8;
+        let pos_start = Vec2 {
+            x: -self.half_bounds_size.x,
+            y: -self.half_bounds_size.y * 0.8,
+        };
+        let bounds = Vec2 {
+            x: self.half_bounds_size.x * 1.6,
+            y: self.half_bounds_size.y - pos_start.y,
+        };
         for i in 0..self.num_particles {
-            let x = -bounds.x + random::<f32>() * bounds.x * 2.0;
-            let y = -bounds.y + random::<f32>() * bounds.y * 2.0;
+            let x = pos_start.x + random::<f32>() * bounds.x;
+            let y = pos_start.y + random::<f32>() * bounds.y;
             self.positions[i] = Vec2::new(x, y);
             self.predicted_positions[i] = self.positions[i];
             self.velocities[i] = Vec2::ZERO;
@@ -322,6 +329,7 @@ impl Simulation {
         if distance >= self.smoothing_radius {
             0f32
         } else {
+            // x^2 * scaling_factor
             (self.smoothing_radius - distance) * (self.smoothing_radius - distance) * self.smoothing_scaling_factor
         }
     }
@@ -330,7 +338,8 @@ impl Simulation {
         if distance >= self.smoothing_radius {
             0f32
         } else {
-            (distance - self.smoothing_radius) * self.smoothing_derivative_scaling_factor
+            // Derivative of x^2 * scaling_factor is 2x * scaling_factor
+            2.0 * (distance - self.smoothing_radius) * self.smoothing_derivative_scaling_factor
         }
     }
 
@@ -351,15 +360,15 @@ impl Simulation {
         }
     }
 
-    fn pressure_force(&self, id: usize) -> Vec2 {
-        let mut gradient = Vec2::default();
-        let position = self.positions[id];
-        let density = self.densities[id].0;
+    fn pressure_force(&self, particle_id: usize) -> Vec2 {
+        let mut pressure_force = Vec2::default();
+        let position = self.positions[particle_id];
+        let density = self.densities[particle_id].0;
 
         let bottom = -self.half_bounds_size.y;
         let left = -self.half_bounds_size.x;
-        let particle_row = ((self.positions[id].y - bottom) / self.smoothing_radius) as usize;
-        let particle_col = ((self.positions[id].x - left) / self.smoothing_radius) as usize;
+        let particle_row = ((self.positions[particle_id].y - bottom) / self.smoothing_radius) as usize;
+        let particle_col = ((self.positions[particle_id].x - left) / self.smoothing_radius) as usize;
 
         for offset in OFFSETS_2D {
             let region_row = particle_row as i32 + offset.0;
@@ -369,35 +378,28 @@ impl Simulation {
                 let region_col = region_col as usize;
                 if region_row < self.region_rows && region_col < self.region_cols {
                     let row = &self.regions[region_row];
-                    for i in &row[region_col] {
-                        if *i == id {
+                    for &id in &row[region_col] {
+                        if id == particle_id {
                             continue;
                         }
-                        let offset = self.positions[*i] - position;
-                        let distance = offset.length();
+
+                        let offset = self.positions[id] - position;
+                        let distance = offset.length().max(0.000001);
                         if distance >= self.smoothing_radius {
                             continue;
                         }
-                        if distance == 0.0 {
-                            // Move toward the center, plus a random vector.
-                            gradient += (Vec2::new(random::<f32>() - 0.5, random::<f32>() - 0.5)
-                                + (Vec2::ZERO - position))
-                                * self.particle_size;
 
-                            continue;
-                        }
-
-                        // Unit vector in the direction of the particle.
+                        // Unit vector in the direction of the other particle.
                         let direction = offset / distance;
                         let slope = self.smoothing_kernel_derivative(distance);
-                        let pressure = self.shared_pressure(density, self.densities[*i].0);
-                        gradient += direction * slope * pressure / self.densities[*i].0;
+                        let pressure = self.shared_pressure(density, self.densities[id].0);
+                        pressure_force += direction * slope * pressure / self.densities[id].0;
                     }
                 }
             }
         }
 
-        gradient
+        pressure_force
     }
 
     fn external_forces(&self, id: usize) -> Vec2 {

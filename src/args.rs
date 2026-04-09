@@ -6,15 +6,15 @@ use once_cell::sync::Lazy;
 /// A test client for Proactive Voice Moderation
 pub struct Args {
     /// Initial window size, as width,height
-    #[arg(long, default_value = "600,800")]
+    #[arg(long, default_value = "900,800")]
     pub win: String,
 
-    #[cfg(debug_assertions)]
     /// Number of particles
+    #[cfg(debug_assertions)]
     #[arg(long, default_value = "10000")]
     pub num: u32,
-    #[cfg(not(debug_assertions))]
     /// Number of particles
+    #[cfg(not(debug_assertions))]
     #[arg(long, default_value = "50000")]
     pub num: u32,
     /// Initial smoothing radius (where 1.0 == a circle of approx 25 particles in diameter).
