@@ -15,7 +15,7 @@ pub struct Messages {
     pub messages: Vec<MessageText>,
 }
 
-pub fn spawn_messages(commands: &mut Commands, scale: f32) {
+pub fn spawn_messages(commands: &mut Commands) {
     // Dynamic message text
     let mut messages = Messages { messages: vec![] };
     messages.messages.push(MessageText {
@@ -31,7 +31,7 @@ pub fn spawn_messages(commands: &mut Commands, scale: f32) {
             ..default()
         },
         TextLayout::new_with_justify(Justify::Left),
-        Transform::from_scale(Vec3::splat(scale)).with_translation(Vec3::new(0.0, 2.0, 1.0)),
+        Transform::from_translation(Vec3::new(0.0, 2.0, 1.0)),
         messages,
     ));
 }

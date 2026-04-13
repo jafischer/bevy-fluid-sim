@@ -51,18 +51,14 @@ impl Simulation {
         self.debug.use_predicted_positions = !self.debug.use_predicted_positions;
     }
 
-    pub fn toggle_viscosity(&mut self) {
-        self.debug.use_viscosity = !self.debug.use_viscosity;
-    }
-
     pub fn log_next_frame(&mut self) {
         self.debug.log_frame = self.debug.current_frame + 1;
     }
 
     pub fn adj_smoothing_radius(&mut self, increment: f32) {
-        self.smoothing_radius = (self.smoothing_radius + increment).max(increment.abs());
-        self.smoothing_scaling_factor = 6.0 / (PI * self.smoothing_radius.powf(4.0));
-        self.smoothing_derivative_scaling_factor = PI * self.smoothing_radius.powf(4.0) / 6.0;
+        let smoothing_radius = self.smoothing_radius / self.particle_size;
+
+        self.set_smoothing_radius((smoothing_radius + increment).max(increment.abs()));
     }
 
     pub fn adj_gravity(&mut self, increment: f32) {

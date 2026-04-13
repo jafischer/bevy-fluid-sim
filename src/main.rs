@@ -4,9 +4,7 @@ mod messages;
 mod particle;
 mod sim_impl;
 mod sim_settings;
-mod sim_sfs_impl;
 mod sim_struct;
-mod spatial_hash;
 
 use std::ops::{Deref, DerefMut};
 use std::sync::Mutex;
@@ -65,9 +63,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn setup(mut commands: Commands, window: Single<&Window>) {
     // Create the simulation and add it to ECS.
-    let mut sim = Simulation::new(window.width(), window.height());
-    let scale = sim.scale;
-    commands.spawn((Camera2d, Transform::from_scale(Vec3::splat(scale))));
+    let mut sim = Simulation::new(
+        window.width(),
+        window.height(),
+        ARGS.num as usize,
+        ARGS.smoothing_radius,
+        ARGS.gravity,
+        ARGS.pressure_multiplier as f32,
+        ARGS.viscosity_strength,
+        ARGS.collision_damping,
+        ARGS.interaction_input_radius as f32,
+    );
+    commands.spawn(Camera2d);
     sim.spawn_particles(&mut commands);
     commands.spawn(sim);
 
@@ -100,7 +107,7 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
         },
     ));
 
-    spawn_messages(&mut commands, scale);
+    spawn_messages(&mut commands);
 
     // Keyboard commands component
     commands.spawn(KeyboardCommands::create());
@@ -133,17 +140,17 @@ fn update_particles(
         let color = if particle.watched {
             Color::linear_rgb(1.0, 1.0, 0.0)
         } else if sim.debug.use_heatmap {
-            let rgb = if sim.densities[particle.id].0 < sim.target_density {
-                let density_scale = sim.densities[particle.id].0 / sim.target_density;
+            let rgb = if sim.densities[particle.id] < sim.target_density {
+                let density_scale = sim.densities[particle.id] / sim.target_density;
                 COLD + density_scale * COLD_DIFF
             } else {
-                let density_scale = (sim.densities[particle.id].0 - sim.target_density) / sim.target_density;
+                let density_scale = (sim.densities[particle.id] - sim.target_density) / sim.target_density;
                 NEUTRAL + density_scale.min(4.0) / 4.0 * WARM_DIFF
             };
             Color::linear_rgb(rgb.x, rgb.y, rgb.z)
         } else {
             let speed = sim.velocities[particle.id].length();
-            let speed_scale = speed / (sim.speed_limit * sim.particle_size * time.delta_secs());
+            let speed_scale = speed / (100.0 * sim.particle_size * time.delta_secs());
             max_speed = max_speed.max(speed_scale);
             let rgb = STOPPED + speed_scale * SPEED_DIFF;
             Color::linear_rgb(rgb.x, rgb.y, rgb.z)
@@ -189,12 +196,10 @@ fn draw_debug_info(
 ) {
     if sim.debug.show_arrows {
         particle_query.iter().for_each(|(transform, particle)| {
-            if particle.watched {
-                let arrow_end = transform.translation.xy() + sim.velocities[particle.id] * 2.0;
-                gizmos
-                    .arrow(transform.translation.xy().extend(0.0), arrow_end.extend(0.0), YELLOW)
-                    .with_tip_length(sim.particle_size);
-            }
+            let arrow_end = transform.translation.xy() + sim.velocities[particle.id] * 2.0;
+            gizmos
+                .arrow(transform.translation.xy().extend(0.0), arrow_end.extend(0.0), YELLOW)
+                .with_tip_length(sim.particle_size);
         });
     }
     if sim.debug.show_smoothing_radius {
