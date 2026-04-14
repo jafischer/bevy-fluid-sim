@@ -31,6 +31,10 @@ pub struct Simulation {
     pub region_rows: usize,
     pub region_cols: usize,
     pub regions: Vec<Vec<Vec<usize>>>,
+    pub min_velocity: f32,
+    pub max_velocity: f32,
+    pub min_density: f32,
+    pub max_density: f32,
 
     pub debug: DebugParams,
 }

@@ -114,15 +114,11 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
 }
 
 // Some color definitions for blending.
-const COLD: Vec3 = Vec3::new(0.0, 0.0, 1.0);
-const NEUTRAL: Vec3 = Vec3::new(0.0, 0.0, 0.5);
+const COLD: Vec3 = Vec3::new(0.0, 0.0, 0.6);
 const HOT: Vec3 = Vec3::new(1.0, 0.0, 0.0);
-const COLD_DIFF: Vec3 = Vec3::new(NEUTRAL.x - COLD.x, NEUTRAL.y - COLD.y, NEUTRAL.z - COLD.z);
-const WARM_DIFF: Vec3 = Vec3::new(HOT.x - NEUTRAL.x, HOT.y - NEUTRAL.y, HOT.z - NEUTRAL.z);
 
 const STOPPED: Vec3 = Vec3::new(0.1, 0.1, 0.1);
 const FAST: Vec3 = Vec3::new(1.0, 1.0, 1.0);
-const SPEED_DIFF: Vec3 = Vec3::new(FAST.x - STOPPED.x, FAST.y - STOPPED.y, FAST.z - STOPPED.z);
 
 fn update_particles(
     mut commands: Commands,
@@ -132,27 +128,20 @@ fn update_particles(
 ) {
     sim.update_particles(time.delta_secs());
 
-    let mut max_speed: f32 = 0.0;
-
     particle_query.iter_mut().for_each(|(entity, mut transform, particle)| {
         transform.translation.x = sim.positions[particle.id].x;
         transform.translation.y = sim.positions[particle.id].y;
         let color = if particle.watched {
             Color::linear_rgb(1.0, 1.0, 0.0)
         } else if sim.debug.use_heatmap {
-            let rgb = if sim.densities[particle.id] < sim.target_density {
-                let density_scale = sim.densities[particle.id] / sim.target_density;
-                COLD + density_scale * COLD_DIFF
-            } else {
-                let density_scale = (sim.densities[particle.id] - sim.target_density) / sim.target_density;
-                NEUTRAL + density_scale.min(4.0) / 4.0 * WARM_DIFF
-            };
+            let density_ratio = (sim.densities[particle.id] - sim.min_density) / sim.max_density;
+            let density_scale = density_ratio.powf(1.0);
+            let rgb = COLD + density_scale * (HOT - COLD);
             Color::linear_rgb(rgb.x, rgb.y, rgb.z)
         } else {
-            let speed = sim.velocities[particle.id].length();
-            let speed_scale = speed / (100.0 * sim.particle_size * time.delta_secs());
-            max_speed = max_speed.max(speed_scale);
-            let rgb = STOPPED + speed_scale * SPEED_DIFF;
+            let speed_ratio = sim.velocities[particle.id].length() / sim.max_velocity;
+            let speed_scale = speed_ratio.powf(0.33);
+            let rgb = STOPPED + speed_scale * (FAST - STOPPED);
             Color::linear_rgb(rgb.x, rgb.y, rgb.z)
         };
 
@@ -162,9 +151,6 @@ fn update_particles(
             ..Default::default()
         });
     });
-    if sim.debug.use_heatmap {
-        sim.debug(format!("max speed: {max_speed}"));
-    }
 
     sim.end_frame();
 }

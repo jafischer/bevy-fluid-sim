@@ -157,6 +157,18 @@ impl Simulation {
             self.calculate_pressures(delta);
             self.apply_velocities(delta);
             self.apply_viscosity();
+
+            self.min_velocity = f32::MAX;
+            self.max_velocity = 0.0;
+            self.min_density = f32::MAX;
+            self.max_density = 0.0;
+
+            for i in 0..self.num_particles {
+                self.min_density = self.min_density.min(self.densities[i]);
+                self.max_density = self.max_density.max(self.densities[i]);
+                self.min_velocity = self.min_velocity.min(self.velocities[i].length());
+                self.max_velocity = self.max_velocity.max(self.velocities[i].length());
+            }
         }
     }
 
@@ -168,19 +180,23 @@ impl Simulation {
         if self.debug.log_frame == self.debug.current_frame {
             println!("{self:?}");
             println!();
-            let lowest_density = self.densities.iter().map(|density| *density).reduce(f32::min).unwrap();
-            let highest_density = self
-                .densities
-                .clone()
-                .iter()
-                .map(|density| *density)
-                .reduce(f32::max)
-                .unwrap();
-            let average_density =
-                self.densities.iter().map(|density| *density).sum::<f32>() / self.num_particles as f32;
-            println!("lowest density: {lowest_density}");
-            println!("highest density: {highest_density}");
-            println!("average density: {average_density}");
+            let lowest_density = self.densities.iter().cloned().reduce(f32::min).unwrap();
+            let highest_density = self.densities.iter().cloned().reduce(f32::max).unwrap();
+            let average_density = self.densities.iter().cloned().sum::<f32>() / self.num_particles as f32;
+
+            let lowest_velocity = self.velocities.iter().map(|v| v.length()).reduce(f32::min).unwrap();
+            let highest_velocity = self.velocities.iter().map(|v| v.length()).reduce(f32::max).unwrap();
+            let average_velocity = self.velocities.iter().map(|v| v.length()).sum::<f32>() / self.num_particles as f32;
+            println!("density:  min:     {}", self.min_density);
+            println!("          lowest:  {lowest_density}");
+            println!("          highest: {highest_density}");
+            println!("          max:     {}", self.max_density);
+            println!("          avg:     {average_density}");
+            println!("velocity: min:     {}", self.min_velocity);
+            println!("          lowest:  {lowest_velocity}");
+            println!("          highest: {highest_velocity}");
+            println!("          max:     {}", self.max_velocity);
+            println!("          avg:     {average_velocity}");
         }
 
         self.debug.current_frame += 1;
