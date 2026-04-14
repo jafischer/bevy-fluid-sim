@@ -193,10 +193,11 @@ fn draw_debug_info(
     mut gizmos: Gizmos,
     sim: Single<&Simulation>,
     particle_query: Query<(&mut Transform, &mut Particle)>,
+    time: Res<Time>,
 ) {
     if sim.debug.show_arrows {
         particle_query.iter().for_each(|(transform, particle)| {
-            let arrow_end = transform.translation.xy() + sim.velocities[particle.id] * 2.0;
+            let arrow_end = transform.translation.xy() + sim.velocities[particle.id] * time.delta_secs();
             gizmos
                 .arrow(transform.translation.xy().extend(0.0), arrow_end.extend(0.0), YELLOW)
                 .with_tip_length(sim.particle_size);
