@@ -263,8 +263,11 @@ impl Simulation {
         let mut density = 0.0;
 
         for neighbor_id in self.neighbor_particles(particle_id) {
-            let neighbor_pos =
-                if self.debug.use_predicted_positions { self.predicted_positions[neighbor_id] } else { self.positions[neighbor_id] };
+            let neighbor_pos = if self.debug.use_predicted_positions {
+                self.predicted_positions[neighbor_id]
+            } else {
+                self.positions[neighbor_id]
+            };
             let distance = (neighbor_pos - position).length().max(0.000000001);
             let influence = self.smoothing_kernel(distance);
             density += influence;
@@ -336,7 +339,9 @@ impl Simulation {
         if distance >= self.smoothing_radius {
             0.0
         } else {
-            2.0 * (distance - self.smoothing_radius) * (distance - self.smoothing_radius) * self.smoothing_derivative_scaling_factor
+            2.0 * (distance - self.smoothing_radius)
+                * (distance - self.smoothing_radius)
+                * self.smoothing_derivative_scaling_factor
         }
     }
 
@@ -378,8 +383,7 @@ impl Simulation {
             if distance < self.smoothing_radius {
                 if distance == 0.0 {
                     // Move in a random direction.
-                    pressure_force += Vec2::new(random::<f32>(), random::<f32>())
-                        * self.particle_size;
+                    pressure_force += Vec2::new(random::<f32>(), random::<f32>()) * self.particle_size;
 
                     continue;
                 }
@@ -486,8 +490,7 @@ mod tests {
                 println!("    density={density:.4}");
 
                 sim.calculate_densities();
-                let pressure = sim.calculate_pressure(center_particle, 1.0 / 120.0)
-                    / sim.particle_size;
+                let pressure = sim.calculate_pressure(center_particle, 1.0 / 120.0) / sim.particle_size;
                 assert_ne!(Vec2::ZERO, pressure);
                 pressures.push(pressure);
                 println!("    pressure={pressure:.4}");

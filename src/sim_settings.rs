@@ -60,8 +60,7 @@ impl Simulation {
     }
 
     pub fn adj_gravity(&mut self, increase: bool) {
-        self.gravity.y =
-            if increase { self.gravity.y * 1.10 } else { self.gravity.y / 1.10 };
+        self.gravity.y = if increase { self.gravity.y * 1.10 } else { self.gravity.y / 1.10 };
     }
 
     pub fn adj_pressure(&mut self, increase: bool) {

@@ -38,12 +38,22 @@ pub struct Simulation {
 impl Debug for Simulation {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Simulation:")?;
-        writeln!(f, "    smoothing_radius: {} ({})", self.smoothing_radius, self.smoothing_radius / self.particle_size)?;
+        writeln!(
+            f,
+            "    smoothing_radius: {} ({})",
+            self.smoothing_radius,
+            self.smoothing_radius / self.particle_size
+        )?;
         writeln!(f, "    num_particles: {}", self.num_particles)?;
         writeln!(f, "    particle_size: {}", self.particle_size)?;
         writeln!(f, "    gravity: {} ({})", self.gravity.y, self.gravity.y / self.particle_size)?;
         writeln!(f, "    target_density: {}", self.target_density)?;
-        writeln!(f, "    pressure_multiplier: {} ({})", self.pressure_multiplier, self.pressure_multiplier / self.particle_size)?;
+        writeln!(
+            f,
+            "    pressure_multiplier: {} ({})",
+            self.pressure_multiplier,
+            self.pressure_multiplier / self.particle_size
+        )?;
         writeln!(f, "    viscosity_strength: {}", self.viscosity_strength)?;
         writeln!(f, "    collision_damping: {}", self.collision_damping)
     }

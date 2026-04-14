@@ -162,7 +162,6 @@ fn adj_gravity(
     _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
     msgs: &mut Single<&mut Messages>,
 ) {
-
     if shift {
         sim.adj_gravity(true);
     } else {
