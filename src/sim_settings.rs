@@ -15,12 +15,6 @@ impl Simulation {
         self.debug.frames_to_show = val;
     }
 
-    pub fn debug(&self, message: String) {
-        if self.debug.log_frame == self.debug.current_frame {
-            println!("{message}");
-        }
-    }
-
     pub fn toggle_smoothing_radius(&mut self) {
         self.debug.show_smoothing_radius = !self.debug.show_smoothing_radius;
     }

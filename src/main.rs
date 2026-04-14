@@ -13,9 +13,10 @@ use bevy::color::palettes::basic::*;
 use bevy::color::palettes::css::GOLD;
 use bevy::prelude::*;
 use bevy::window::{PresentMode, WindowResized, WindowResolution};
+use clap::Parser;
 use once_cell::sync::Lazy;
 
-use crate::args::ARGS;
+use crate::args::{Args};
 use crate::keyboard::{handle_keypress, KeyboardCommands};
 use crate::messages::{display_messages, spawn_messages, MessageText, Messages};
 use crate::particle::Particle;
@@ -23,6 +24,9 @@ use crate::sim_struct::Simulation;
 
 #[derive(Component)]
 struct FpsText;
+
+static ARGS: Lazy<Args> = Lazy::new(Args::parse);
+
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let win_size: Vec<_> = ARGS.win.split(',').collect();
@@ -66,13 +70,7 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
     let mut sim = Simulation::new(
         window.width(),
         window.height(),
-        ARGS.num as usize,
-        ARGS.smoothing_radius,
-        ARGS.gravity,
-        ARGS.pressure_multiplier as f32,
-        ARGS.viscosity_strength,
-        ARGS.collision_damping,
-        ARGS.interaction_input_radius as f32,
+        &ARGS,
     );
     commands.spawn(Camera2d);
     sim.spawn_particles(&mut commands);
@@ -93,7 +91,7 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
 
     // Display the number of particles.
     commands.spawn((
-        Text::new(format!("{} particles", ARGS.num)),
+        Text::new(format!("{} particles", ARGS.num_particles)),
         TextFont {
             font_size: 16.0,
             ..default()

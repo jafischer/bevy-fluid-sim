@@ -11,12 +11,14 @@ pub struct Simulation {
     pub viscosity_scaling_factor: f32,
     pub num_particles: usize,
     pub particle_size: f32,
+    pub sprite_size: f32,
     pub half_bounds_size: Vec2,
     pub gravity: Vec2,
     pub target_density: f32,
     pub pressure_multiplier: f32,
     pub viscosity_strength: f32,
     pub collision_damping: f32,
+    pub speed: f32,
 
     // For attraction/repulsion effect when mouse is clicked:
     pub interaction_input_strength: f32,

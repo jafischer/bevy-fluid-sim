@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use rand::random;
 use rayon::prelude::*;
 
-use crate::args::ARGS;
+use crate::args::Args;
 use crate::sim_struct::{DebugParams, Simulation};
 use crate::Particle;
 
@@ -21,43 +21,35 @@ const OFFSETS_2D: [(i32, i32); 9] = [
 ];
 
 impl Simulation {
-    pub fn new(
-        window_width: f32,
-        window_height: f32,
-        num_particles: usize,
-        smoothing_radius: f32,
-        gravity: f32,
-        pressure_multiplier: f32,
-        viscosity_strength: f32,
-        collision_damping: f32,
-        interaction_input_radius: f32,
-    ) -> Simulation {
+    pub fn new(window_width: f32, window_height: f32, args: &Args) -> Simulation {
         let window_area = window_width * window_height;
         // Pick a particle size (in pixels) relative to the window size.
-        let particle_size = (window_area * 0.5 / num_particles as f32).sqrt();
+        let particle_size = (window_area * 0.5 / args.num_particles as f32).sqrt();
 
         // Preallocate the vectors.
-        let positions = vec![Vec2::default(); num_particles];
-        let predicted_positions = vec![Vec2::default(); num_particles];
-        let velocities = vec![Vec2::default(); num_particles];
-        let densities = vec![0f32; num_particles];
+        let positions = vec![Vec2::default(); args.num_particles];
+        let predicted_positions = vec![Vec2::default(); args.num_particles];
+        let velocities = vec![Vec2::default(); args.num_particles];
+        let densities = vec![0f32; args.num_particles];
 
         let mut sim = Simulation {
             smoothing_radius: 0.0,
             smoothing_scaling_factor: 0.0,
             smoothing_derivative_scaling_factor: 0.0,
             viscosity_scaling_factor: 0.0,
-            num_particles,
+            num_particles: args.num_particles,
             particle_size,
+            sprite_size: args.sprite_size,
             half_bounds_size: Vec2::new(window_width, window_height) / 2.0 - particle_size / 2.0,
-            gravity: Vec2::new(0.0, gravity * particle_size),
+            gravity: Vec2::new(0.0, args.gravity * particle_size),
             target_density: 0.0,
-            pressure_multiplier: pressure_multiplier * particle_size,
-            collision_damping,
+            pressure_multiplier: args.pressure_multiplier as f32 * particle_size,
+            collision_damping: args.collision_damping,
+            speed: args.speed,
 
-            viscosity_strength,
+            viscosity_strength: args.viscosity_strength,
             interaction_input_strength: 0.0,
-            interaction_input_radius: interaction_input_radius * particle_size,
+            interaction_input_radius: args.interaction_input_radius as f32 * particle_size,
             interaction_input_point: Vec2::ZERO,
 
             positions,
@@ -67,6 +59,10 @@ impl Simulation {
             region_rows: 0,
             region_cols: 0,
             regions: vec![],
+            min_velocity: f32::MAX,
+            max_velocity: 0.0,
+            min_density: f32::MAX,
+            max_density: 0.0,
 
             debug: DebugParams {
                 current_frame: 0,
@@ -81,7 +77,7 @@ impl Simulation {
             },
         };
 
-        sim.set_smoothing_radius(smoothing_radius);
+        sim.set_smoothing_radius(args.smoothing_radius);
 
         sim
     }
@@ -107,7 +103,7 @@ impl Simulation {
             commands.spawn((
                 Sprite {
                     color,
-                    custom_size: Some(Vec2::splat(self.particle_size * ARGS.sprite_size)),
+                    custom_size: Some(Vec2::splat(self.particle_size * self.sprite_size)),
                     ..Default::default()
                 },
                 particle,
@@ -148,7 +144,7 @@ impl Simulation {
 
         self.predicted_positions = (0..self.num_particles)
             .into_par_iter()
-            .map(|i| self.positions[i] + self.velocities[i] * delta)
+            .map(|i| self.positions[i] + self.velocities[i] * delta * self.speed)
             .collect();
 
         self.calculate_densities();
@@ -338,7 +334,7 @@ impl Simulation {
     }
 
     fn apply_velocity(&self, particle_id: usize, delta: f32) -> (Vec2, Vec2) {
-        let position = self.positions[particle_id] + self.velocities[particle_id] * delta;
+        let position = self.positions[particle_id] + self.velocities[particle_id] * delta * self.speed;
         self.resolve_collisions(position, self.velocities[particle_id])
     }
 
@@ -397,16 +393,17 @@ impl Simulation {
             let offset = self.positions[neighbor_id] - position;
             let distance = offset.length();
             if distance < self.smoothing_radius {
-                if distance == 0.0 {
-                    // Move in a random direction.
-                    pressure_force += Vec2::new(random::<f32>(), random::<f32>()) * self.particle_size;
-
-                    continue;
+                if distance > 0.0 {
+                    let direction = -(offset / distance);
+                    let slope = self.smoothing_kernel_derivative(distance);
+                    let pressure = self.shared_pressure(density, self.densities[neighbor_id]);
+                    pressure_force += pressure * direction * slope / self.densities[neighbor_id];
+                } else {
+                    // Move toward the center, plus a random vector.
+                    pressure_force += (Vec2::new(random::<f32>() - 0.5, random::<f32>() - 0.5)
+                        + (Vec2::ZERO - position))
+                        * self.particle_size;
                 }
-                let direction = -(offset / distance);
-                let slope = self.smoothing_kernel_derivative(distance);
-                let pressure = self.shared_pressure(density, self.densities[neighbor_id]);
-                pressure_force += pressure * direction * slope / self.densities[neighbor_id];
             }
         }
 
@@ -478,7 +475,23 @@ mod tests {
             let mut densities = Vec::new();
             let mut pressures = Vec::new();
 
-            let mut sim = Simulation::new(win_width, win_height, num_particles, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0);
+            let mut sim = Simulation::new(
+                win_width,
+                win_height,
+                &Args {
+                    win: "".to_string(),
+                    num_particles,
+                    smoothing_radius: 0.0,
+                    gravity: 0.0,
+                    speed: 0.0,
+                    pressure_multiplier: 0,
+                    viscosity_strength: 0.0,
+                    collision_damping: 0.0,
+                    interaction_input_radius: 0,
+                    interaction_input_strength: 0.0,
+                    sprite_size: 0.0,
+                },
+            );
             let spacing = sim.particle_size * 1.5;
 
             println!("\nwindow scale: {window_scale}, particle size: {}", sim.particle_size);
