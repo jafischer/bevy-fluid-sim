@@ -24,6 +24,14 @@ looks... fluid adjacent.
 
 ![fluid adjacent](./Screenshot%202025-03-02%20at%206.59.13%E2%80%AFPM.png).
 
+## Update
+
+After a couple of years, I revisited this and undid some of my embarrassing math
+goofs and have something much more fluid-like. I got viscosity working, and 
+removed the scaling hack that I thought was necessary, but wasn't. It's still
+very dependent on the right choice of values for several parameters, and it
+behaves more like thick oil than water, but it's... better.
+
 ## Running
 
 To speed up compiling (world record understatement), I use the `dynamic_linking`
