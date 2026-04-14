@@ -8,15 +8,15 @@ pub struct Simulation {
     pub smoothing_radius: f32,
     pub smoothing_scaling_factor: f32,
     pub smoothing_derivative_scaling_factor: f32,
+    pub viscosity_scaling_factor: f32,
     pub num_particles: usize,
     pub particle_size: f32,
     pub half_bounds_size: Vec2,
     pub gravity: Vec2,
     pub target_density: f32,
     pub pressure_multiplier: f32,
-    pub collision_damping: f32,
     pub viscosity_strength: f32,
-    pub prediction_factor: f32,
+    pub collision_damping: f32,
 
     // For attraction/repulsion effect when mouse is clicked:
     pub interaction_input_strength: f32,
@@ -38,12 +38,13 @@ pub struct Simulation {
 impl Debug for Simulation {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Simulation:")?;
-        writeln!(f, "    smoothing_radius: {}", self.smoothing_radius)?;
+        writeln!(f, "    smoothing_radius: {} ({})", self.smoothing_radius, self.smoothing_radius / self.particle_size)?;
         writeln!(f, "    num_particles: {}", self.num_particles)?;
         writeln!(f, "    particle_size: {}", self.particle_size)?;
-        writeln!(f, "    gravity: {}", self.gravity)?;
+        writeln!(f, "    gravity: {} ({})", self.gravity.y, self.gravity.y / self.particle_size)?;
         writeln!(f, "    target_density: {}", self.target_density)?;
-        writeln!(f, "    pressure_multiplier: {}", self.pressure_multiplier)?;
+        writeln!(f, "    pressure_multiplier: {} ({})", self.pressure_multiplier, self.pressure_multiplier / self.particle_size)?;
+        writeln!(f, "    viscosity_strength: {}", self.viscosity_strength)?;
         writeln!(f, "    collision_damping: {}", self.collision_damping)
     }
 }
@@ -58,5 +59,4 @@ pub struct DebugParams {
     pub use_heatmap: bool,
     pub show_arrows: bool,
     pub use_predicted_positions: bool,
-    pub use_fixed_delta: bool,
 }

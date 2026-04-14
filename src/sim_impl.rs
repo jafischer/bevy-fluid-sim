@@ -140,8 +140,8 @@ impl Simulation {
         // Set the target density based on the current density of the center particle.
         if self.target_density == 0.0 {
             self.target_density = self.calculate_density((rows / 2) * cols + (cols / 2)) * 0.8;
+            println!("Target density: {}", self.target_density);
         }
-        println!("Target density: {}", self.target_density);
     }
 
     pub fn update_particles(&mut self, delta: f32) {
