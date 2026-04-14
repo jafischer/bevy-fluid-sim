@@ -61,17 +61,19 @@ impl KeyboardCommands {
         // H: toggle heat map
         kb_cmds.add_command(KeyCode::KeyH, "Toggle heatmap", 500, toggle_heatmap);
         // I: toggle inertia
-        kb_cmds.add_command(KeyCode::KeyI, "Reset inertia (shift: toggle inertia)", 250, reset_inertia);
+        kb_cmds.add_command(KeyCode::KeyI, "Reset inertia", 250, reset_inertia);
         // L: log debug info in the next frame
         kb_cmds.add_command(KeyCode::KeyL, "Log debug info", 250, |sim, _, _, _, _| sim.log_next_frame());
         // P: toggle use of predicted positions
-        kb_cmds.add_command(KeyCode::KeyP, "Toggle use of predicted positions", 500, toggle_predicted);
+        kb_cmds.add_command(KeyCode::KeyP, "Decrease pressure multiplier (shift: inc)", 100, adj_pressure);
+        // O: toggle use of predicted positions
+        kb_cmds.add_command(KeyCode::KeyO, "Toggle use of predicted positions", 500, toggle_predicted);
         // R: reset the simulation
         kb_cmds.add_command(KeyCode::KeyR, "Reset particles", 250, |sim, _, _, _, _| sim.reset());
-        // V: toggle viscosity
-        kb_cmds.add_command(KeyCode::KeyV, "Toggle viscosity", 250, toggle_viscosity);
         // S: increase/decrease smoothing radius.
-        kb_cmds.add_command(KeyCode::KeyS, "Decrease smoothing radius (shift: inc)", 50, adj_smoothing_radius);
+        kb_cmds.add_command(KeyCode::KeyS, "Decrease smoothing radius (shift: inc)", 250, adj_smoothing_radius);
+        // V: increase/decrease viscosity strength.
+        kb_cmds.add_command(KeyCode::KeyV, "Decrease smoothing radius (shift: inc)", 50, adj_viscosity);
         // W: "watch" the particle(s) under the cursor (color them yellow).
         // Shift-W: clear all watched particles.
         kb_cmds.add_command(KeyCode::KeyW, "Watch (highlight) particle under cursor", 250, watch_particle);
@@ -99,19 +101,31 @@ fn key_to_string(key: KeyCode) -> String {
     match key {
         KeyCode::Digit1 => "1".into(),
         KeyCode::KeyA => "A".into(),
+        KeyCode::KeyB => "B".into(),
         KeyCode::KeyC => "C".into(),
+        KeyCode::KeyD => "D".into(),
+        KeyCode::KeyE => "E".into(),
         KeyCode::KeyF => "F".into(),
         KeyCode::KeyG => "G".into(),
         KeyCode::KeyH => "H".into(),
         KeyCode::KeyI => "I".into(),
+        KeyCode::KeyJ => "J".into(),
+        KeyCode::KeyK => "K".into(),
         KeyCode::KeyL => "L".into(),
+        KeyCode::KeyM => "M".into(),
+        KeyCode::KeyN => "N".into(),
+        KeyCode::KeyO => "O".into(),
         KeyCode::KeyP => "P".into(),
         KeyCode::KeyQ => "Q".into(),
         KeyCode::KeyR => "R".into(),
         KeyCode::KeyS => "S".into(),
+        KeyCode::KeyT => "T".into(),
+        KeyCode::KeyU => "U".into(),
         KeyCode::KeyV => "V".into(),
         KeyCode::KeyW => "W".into(),
         KeyCode::KeyX => "X".into(),
+        KeyCode::KeyY => "Y".into(),
+        KeyCode::KeyZ => "Z".into(),
         KeyCode::Space => "Space".into(),
         other => format!("{:?}", other),
     }
@@ -149,12 +163,31 @@ fn adj_gravity(
     msgs: &mut Single<&mut Messages>,
 ) {
     if shift {
-        sim.adj_gravity(-0.5);
+        sim.adj_gravity(true);
     } else {
-        sim.adj_gravity(0.5);
+        sim.adj_gravity(false);
     }
     msgs.messages.push(MessageText {
-        text: format!("Gravity: {:.1}", sim.gravity.y),
+        text: format!("Gravity: {:.1}", sim.gravity.y / sim.particle_size),
+        start_time: Instant::now(),
+        duration: Duration::from_secs(1),
+    });
+}
+
+fn adj_pressure(
+    sim: &mut Simulation,
+    shift: bool,
+    _cursor_pos: &Vec2,
+    _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
+    msgs: &mut Single<&mut Messages>,
+) {
+    if shift {
+        sim.adj_pressure(true);
+    } else {
+        sim.adj_pressure(false);
+    }
+    msgs.messages.push(MessageText {
+        text: format!("Pressure multiplier: {:.1}", sim.pressure_multiplier / sim.particle_size),
         start_time: Instant::now(),
         duration: Duration::from_secs(1),
     });
@@ -185,26 +218,17 @@ fn toggle_heatmap(
 
 fn reset_inertia(
     sim: &mut Simulation,
-    shift: bool,
+    _shift: bool,
     _cursor_pos: &Vec2,
     _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
     msgs: &mut Single<&mut Messages>,
 ) {
-    if shift {
-        sim.toggle_inertia();
-        msgs.messages.push(MessageText {
-            text: format!("Inertia {}", if sim.debug.use_inertia { "on" } else { "off" }),
-            start_time: Instant::now(),
-            duration: Duration::from_secs(1),
-        });
-    } else {
-        sim.reset_inertia();
-        msgs.messages.push(MessageText {
-            text: "Inertia reset".into(),
-            start_time: Instant::now(),
-            duration: Duration::from_secs(1),
-        });
-    }
+    sim.reset_inertia();
+    msgs.messages.push(MessageText {
+        text: "Inertia reset".into(),
+        start_time: Instant::now(),
+        duration: Duration::from_secs(1),
+    });
 }
 
 fn toggle_predicted(
@@ -222,21 +246,6 @@ fn toggle_predicted(
     });
 }
 
-fn toggle_viscosity(
-    sim: &mut Simulation,
-    _shift: bool,
-    _cursor_pos: &Vec2,
-    _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
-    msgs: &mut Single<&mut Messages>,
-) {
-    sim.toggle_viscosity();
-    msgs.messages.push(MessageText {
-        text: format!("Viscosity {}", if sim.debug.use_viscosity { "on" } else { "off" }),
-        start_time: Instant::now(),
-        duration: Duration::from_secs(1),
-    });
-}
-
 fn adj_smoothing_radius(
     sim: &mut Simulation,
     shift: bool,
@@ -244,14 +253,33 @@ fn adj_smoothing_radius(
     _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
     msgs: &mut Single<&mut Messages>,
 ) {
-    let factor = sim.particle_size * 0.5;
+    let factor = 0.5;
     if shift {
         sim.adj_smoothing_radius(factor);
     } else {
         sim.adj_smoothing_radius(-factor);
     }
     msgs.messages.push(MessageText {
-        text: format!("Smoothing radius: {:.2}", sim.smoothing_radius),
+        text: format!("Smoothing radius: {:.2}", sim.smoothing_radius / sim.particle_size),
+        start_time: Instant::now(),
+        duration: Duration::from_secs(1),
+    });
+}
+
+fn adj_viscosity(
+    sim: &mut Simulation,
+    shift: bool,
+    _cursor_pos: &Vec2,
+    _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
+    msgs: &mut Single<&mut Messages>,
+) {
+    if shift {
+        sim.adj_viscosity(true);
+    } else {
+        sim.adj_viscosity(false);
+    }
+    msgs.messages.push(MessageText {
+        text: format!("Viscosity strength: {:.2}", sim.viscosity_strength),
         start_time: Instant::now(),
         duration: Duration::from_secs(1),
     });
@@ -276,7 +304,7 @@ fn watch_particle(
                     particle.id,
                     transform.translation.x,
                     transform.translation.y,
-                    sim.densities[particle.id].0,
+                    sim.densities[particle.id],
                     sim.velocities[particle.id]
                 );
                 particle.watched = true;
@@ -285,9 +313,11 @@ fn watch_particle(
     }
 }
 
+// No real choice about the number of arguments here. ECS gonna ECS.
+#[allow(clippy::too_many_arguments)]
 pub fn handle_keypress(
     kb: Res<ButtonInput<KeyCode>>,
-    mut app_exit: EventWriter<AppExit>,
+    mut app_exit: MessageWriter<AppExit>,
     mut sim: Single<&mut Simulation>,
     camera_query: Single<(&Camera, &GlobalTransform)>,
     mut particle_query: Query<(&mut Transform, &mut Particle)>,
@@ -297,7 +327,7 @@ pub fn handle_keypress(
 ) {
     // Esc / Q: quit the app
     if kb.pressed(KeyCode::Escape) || kb.pressed(KeyCode::KeyQ) {
-        app_exit.send(AppExit::Success);
+        app_exit.write(AppExit::Success);
     }
 
     // ?: display help

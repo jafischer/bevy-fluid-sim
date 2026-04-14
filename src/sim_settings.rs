@@ -1,5 +1,3 @@
-use std::f32::consts::PI;
-
 use bevy::prelude::Vec2;
 
 use crate::sim_struct::Simulation;
@@ -39,10 +37,6 @@ impl Simulation {
         self.debug.use_heatmap = !self.debug.use_heatmap;
     }
 
-    pub fn toggle_inertia(&mut self) {
-        self.debug.use_inertia = !self.debug.use_inertia;
-    }
-
     pub fn reset_inertia(&mut self) {
         (0..self.num_particles).for_each(|i| self.velocities[i] = Vec2::splat(0.0));
     }
@@ -55,21 +49,27 @@ impl Simulation {
         self.debug.use_predicted_positions = !self.debug.use_predicted_positions;
     }
 
-    pub fn toggle_viscosity(&mut self) {
-        self.debug.use_viscosity = !self.debug.use_viscosity;
-    }
-
     pub fn log_next_frame(&mut self) {
         self.debug.log_frame = self.debug.current_frame + 1;
     }
 
     pub fn adj_smoothing_radius(&mut self, increment: f32) {
-        self.smoothing_radius = (self.smoothing_radius + increment).max(increment.abs());
-        self.smoothing_scaling_factor = 6.0 / (PI * self.smoothing_radius.powf(4.0));
-        self.smoothing_derivative_scaling_factor = PI * self.smoothing_radius.powf(4.0) / 6.0;
+        let smoothing_radius = self.smoothing_radius / self.particle_size;
+
+        self.set_smoothing_radius((smoothing_radius + increment).max(increment.abs()));
     }
 
-    pub fn adj_gravity(&mut self, increment: f32) {
-        self.gravity.y = (self.gravity.y + increment).min(0.0);
+    pub fn adj_gravity(&mut self, increase: bool) {
+        self.gravity.y = if increase { self.gravity.y * 1.10 } else { self.gravity.y / 1.10 };
+    }
+
+    pub fn adj_pressure(&mut self, increase: bool) {
+        self.pressure_multiplier =
+            if increase { self.pressure_multiplier * 1.10 } else { self.pressure_multiplier / 1.10 };
+    }
+
+    pub fn adj_viscosity(&mut self, increase: bool) {
+        self.viscosity_strength =
+            if increase { self.viscosity_strength * 1.10 } else { self.viscosity_strength / 1.10 };
     }
 }

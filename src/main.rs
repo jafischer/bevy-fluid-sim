@@ -4,9 +4,7 @@ mod messages;
 mod particle;
 mod sim_impl;
 mod sim_settings;
-mod sim_sfs_impl;
 mod sim_struct;
-mod spatial_hash;
 
 use std::ops::{Deref, DerefMut};
 use std::sync::Mutex;
@@ -31,8 +29,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if win_size.len() != 2 {
         return Err("Incorrect window size".into());
     }
-    let width: u16 = win_size[0].parse()?;
-    let height: u16 = win_size[1].parse()?;
+    let width: u32 = win_size[0].parse()?;
+    let height: u32 = win_size[1].parse()?;
 
     App::new()
         // Background color
@@ -40,7 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_plugins((DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 present_mode: PresentMode::AutoNoVsync,
-                resolution: WindowResolution::new(width as f32, height as f32),
+                resolution: WindowResolution::new(width, height),
                 ..default()
             }),
             ..default()
@@ -65,9 +63,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn setup(mut commands: Commands, window: Single<&Window>) {
     // Create the simulation and add it to ECS.
-    let mut sim = Simulation::new(window.width(), window.height());
-    let scale = sim.scale;
-    commands.spawn((Camera2d, Transform::from_scale(Vec3::splat(scale))));
+    let mut sim = Simulation::new(
+        window.width(),
+        window.height(),
+        ARGS.num as usize,
+        ARGS.smoothing_radius,
+        ARGS.gravity,
+        ARGS.pressure_multiplier as f32,
+        ARGS.viscosity_strength,
+        ARGS.collision_damping,
+        ARGS.interaction_input_radius as f32,
+    );
+    commands.spawn(Camera2d);
     sim.spawn_particles(&mut commands);
     commands.spawn(sim);
 
@@ -92,7 +99,7 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
             ..default()
         },
         // Set the justification of the Text
-        TextLayout::new_with_justify(JustifyText::Right),
+        TextLayout::new_with_justify(Justify::Right),
         Node {
             position_type: PositionType::Absolute,
             right: Val::Px(5.0),
@@ -100,7 +107,7 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
         },
     ));
 
-    spawn_messages(&mut commands, scale);
+    spawn_messages(&mut commands);
 
     // Keyboard commands component
     commands.spawn(KeyboardCommands::create());
@@ -133,17 +140,17 @@ fn update_particles(
         let color = if particle.watched {
             Color::linear_rgb(1.0, 1.0, 0.0)
         } else if sim.debug.use_heatmap {
-            let rgb = if sim.densities[particle.id].0 < sim.target_density {
-                let density_scale = sim.densities[particle.id].0 / sim.target_density;
+            let rgb = if sim.densities[particle.id] < sim.target_density {
+                let density_scale = sim.densities[particle.id] / sim.target_density;
                 COLD + density_scale * COLD_DIFF
             } else {
-                let density_scale = (sim.densities[particle.id].0 - sim.target_density) / sim.target_density;
+                let density_scale = (sim.densities[particle.id] - sim.target_density) / sim.target_density;
                 NEUTRAL + density_scale.min(4.0) / 4.0 * WARM_DIFF
             };
             Color::linear_rgb(rgb.x, rgb.y, rgb.z)
         } else {
             let speed = sim.velocities[particle.id].length();
-            let speed_scale = speed / (sim.speed_limit * sim.particle_size * time.delta_secs());
+            let speed_scale = speed / (100.0 * sim.particle_size * time.delta_secs());
             max_speed = max_speed.max(speed_scale);
             let rgb = STOPPED + speed_scale * SPEED_DIFF;
             Color::linear_rgb(rgb.x, rgb.y, rgb.z)
@@ -186,15 +193,14 @@ fn draw_debug_info(
     mut gizmos: Gizmos,
     sim: Single<&Simulation>,
     particle_query: Query<(&mut Transform, &mut Particle)>,
+    time: Res<Time>,
 ) {
     if sim.debug.show_arrows {
         particle_query.iter().for_each(|(transform, particle)| {
-            if particle.watched {
-                let arrow_end = transform.translation.xy() + sim.velocities[particle.id] * 2.0;
-                gizmos
-                    .arrow(transform.translation.xy().extend(0.0), arrow_end.extend(0.0), YELLOW)
-                    .with_tip_length(sim.particle_size);
-            }
+            let arrow_end = transform.translation.xy() + sim.velocities[particle.id] * time.delta_secs();
+            gizmos
+                .arrow(transform.translation.xy().extend(0.0), arrow_end.extend(0.0), YELLOW)
+                .with_tip_length(sim.particle_size);
         });
     }
     if sim.debug.show_smoothing_radius {
@@ -243,7 +249,7 @@ fn handle_mouse_clicks(
     sim.interaction_input_point = point;
 }
 
-fn on_resize(mut resize_reader: EventReader<WindowResized>, mut sim: Single<&mut Simulation>) {
+fn on_resize(mut resize_reader: MessageReader<WindowResized>, mut sim: Single<&mut Simulation>) {
     for e in resize_reader.read() {
         // When resolution is being changed
         sim.on_resize(e.width, e.height);

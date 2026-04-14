@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use bevy::math::Vec3;
-use bevy::prelude::{default, Commands, Component, JustifyText, Query, Text2d, TextFont, TextLayout, Transform};
+use bevy::prelude::{default, Commands, Component, Justify, Query, Text2d, TextFont, TextLayout, Transform};
 
 #[derive(Clone)]
 pub struct MessageText {
@@ -15,7 +15,7 @@ pub struct Messages {
     pub messages: Vec<MessageText>,
 }
 
-pub fn spawn_messages(commands: &mut Commands, scale: f32) {
+pub fn spawn_messages(commands: &mut Commands) {
     // Dynamic message text
     let mut messages = Messages { messages: vec![] };
     messages.messages.push(MessageText {
@@ -30,8 +30,8 @@ pub fn spawn_messages(commands: &mut Commands, scale: f32) {
             font_size: 20.0,
             ..default()
         },
-        TextLayout::new_with_justify(JustifyText::Left),
-        Transform::from_scale(Vec3::splat(scale)).with_translation(Vec3::new(0.0, 2.0, 1.0)),
+        TextLayout::new_with_justify(Justify::Left),
+        Transform::from_translation(Vec3::new(0.0, 2.0, 1.0)),
         messages,
     ));
 }
