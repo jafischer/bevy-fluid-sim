@@ -20,8 +20,6 @@ const OFFSETS_2D: [(i32, i32); 9] = [
     (1, -1),
 ];
 
-const SIM_FIXED_DELTA: f32 = 1.0 / 120.0;
-
 impl Simulation {
     pub fn new(
         window_width: f32,
@@ -48,16 +46,16 @@ impl Simulation {
             smoothing_radius: 0.0,
             smoothing_scaling_factor: 0.0,
             smoothing_derivative_scaling_factor: 0.0,
+            viscosity_scaling_factor: 0.0,
             num_particles,
             particle_size,
             half_bounds_size: Vec2::new(window_width, window_height) / 2.0 - particle_size / 2.0,
-            gravity: Vec2::new(0.0, gravity),
+            gravity: Vec2::new(0.0, gravity * particle_size),
             target_density: 0.0,
-            pressure_multiplier,
+            pressure_multiplier: pressure_multiplier * particle_size,
             collision_damping,
 
             viscosity_strength,
-            prediction_factor: 1.0 / 60.0,
             interaction_input_strength: 0.0,
             interaction_input_radius: interaction_input_radius * particle_size,
             interaction_input_point: Vec2::ZERO,
@@ -80,7 +78,6 @@ impl Simulation {
                 use_heatmap: true,
                 show_arrows: false,
                 use_predicted_positions: false,
-                use_fixed_delta: false,
             },
         };
 
@@ -93,8 +90,10 @@ impl Simulation {
         let smoothing_radius = smoothing_radius * self.particle_size;
 
         self.smoothing_radius = smoothing_radius;
-        self.smoothing_scaling_factor = 6.0 / (PI * smoothing_radius.powf(4.0));
-        self.smoothing_derivative_scaling_factor = 12.0 / (PI * smoothing_radius.powf(4.0));
+        // The scaling factors are the volume of the corresponding kernel functions over the smoothing radius.
+        self.smoothing_scaling_factor = 10.0 / (PI * smoothing_radius.powf(5.0));
+        self.smoothing_derivative_scaling_factor = 30.0 / (PI * smoothing_radius.powf(5.0));
+        self.viscosity_scaling_factor = 6.0 / (PI * smoothing_radius.powf(4.0));
     }
 
     pub fn spawn_particles(&mut self, commands: &mut Commands) {
@@ -149,7 +148,7 @@ impl Simulation {
 
         self.predicted_positions = (0..self.num_particles)
             .into_par_iter()
-            .map(|i| self.positions[i] + self.velocities[i] * self.prediction_factor)
+            .map(|i| self.positions[i] + self.velocities[i] * delta)
             .collect();
 
         self.calculate_densities();
@@ -157,6 +156,7 @@ impl Simulation {
         if self.frames_to_advance() > 0 {
             self.calculate_pressures(delta);
             self.apply_velocities(delta);
+            self.apply_viscosity();
         }
     }
 
@@ -167,7 +167,22 @@ impl Simulation {
     pub fn end_frame(&mut self) {
         if self.debug.log_frame == self.debug.current_frame {
             println!("{self:?}");
+            println!();
+            let lowest_density = self.densities.iter().map(|density| *density).reduce(f32::min).unwrap();
+            let highest_density = self
+                .densities
+                .clone()
+                .iter()
+                .map(|density| *density)
+                .reduce(f32::max)
+                .unwrap();
+            let average_density =
+                self.densities.iter().map(|density| *density).sum::<f32>() / self.num_particles as f32;
+            println!("lowest density: {lowest_density}");
+            println!("highest density: {highest_density}");
+            println!("average density: {average_density}");
         }
+
         self.debug.current_frame += 1;
         if self.debug.frames_to_show > 0 {
             self.debug.frames_to_show -= 1;
@@ -237,22 +252,6 @@ impl Simulation {
             .into_par_iter()
             .map(|i| self.calculate_density(i))
             .collect();
-
-        if self.debug.log_frame == self.debug.current_frame {
-            let lowest_density = self.densities.iter().map(|density| *density).reduce(f32::min).unwrap();
-            let highest_density = self
-                .densities
-                .clone()
-                .iter()
-                .map(|density| *density)
-                .reduce(f32::max)
-                .unwrap();
-            let average_density =
-                self.densities.iter().map(|density| *density).sum::<f32>() / self.num_particles as f32;
-            println!("lowest density: {lowest_density}");
-            println!("highest density: {highest_density}");
-            println!("average density: {average_density}");
-        }
     }
 
     fn calculate_density(&self, particle_id: usize) -> f32 {
@@ -263,9 +262,9 @@ impl Simulation {
         };
         let mut density = 0.0;
 
-        for i in self.neighbor_particles(particle_id) {
+        for neighbor_id in self.neighbor_particles(particle_id) {
             let neighbor_pos =
-                if self.debug.use_predicted_positions { self.predicted_positions[i] } else { self.positions[i] };
+                if self.debug.use_predicted_positions { self.predicted_positions[neighbor_id] } else { self.positions[neighbor_id] };
             let distance = (neighbor_pos - position).length().max(0.000000001);
             let influence = self.smoothing_kernel(distance);
             density += influence;
@@ -281,8 +280,7 @@ impl Simulation {
             .collect();
     }
 
-    fn calculate_pressure(&self, particle_id: usize, mut delta: f32) -> Vec2 {
-        if self.debug.use_fixed_delta { delta = SIM_FIXED_DELTA; }
+    fn calculate_pressure(&self, particle_id: usize, delta: f32) -> Vec2 {
         self.velocities[particle_id]
             + self.pressure_force(particle_id) * delta
             + self.gravity_force(particle_id) * delta
@@ -313,11 +311,14 @@ impl Simulation {
             .unzip();
     }
 
-    fn apply_velocity(&self, particle_id: usize, mut delta: f32) -> (Vec2, Vec2) {
-        if self.debug.use_fixed_delta {
-            delta = SIM_FIXED_DELTA / delta;
-        }
+    fn apply_viscosity(&mut self) {
+        self.velocities = (0..self.num_particles)
+            .into_par_iter()
+            .map(|particle_id| self.apply_viscosity_to_particle(particle_id))
+            .collect();
+    }
 
+    fn apply_velocity(&self, particle_id: usize, delta: f32) -> (Vec2, Vec2) {
         let position = self.positions[particle_id] + self.velocities[particle_id] * delta;
         self.resolve_collisions(position, self.velocities[particle_id])
     }
@@ -326,7 +327,8 @@ impl Simulation {
         if distance >= self.smoothing_radius {
             0.0
         } else {
-            (self.smoothing_radius - distance) * (self.smoothing_radius - distance) * (self.smoothing_radius - distance) * self.smoothing_scaling_factor
+            let value = self.smoothing_radius - distance;
+            value * value * value * self.smoothing_scaling_factor
         }
     }
 
@@ -335,6 +337,14 @@ impl Simulation {
             0.0
         } else {
             2.0 * (distance - self.smoothing_radius) * (distance - self.smoothing_radius) * self.smoothing_derivative_scaling_factor
+        }
+    }
+
+    fn viscosity_kernel(&self, distance: f32) -> f32 {
+        if distance >= self.smoothing_radius {
+            0.0
+        } else {
+            (self.smoothing_radius - distance) * (self.smoothing_radius - distance) * self.viscosity_scaling_factor
         }
     }
 
@@ -347,11 +357,11 @@ impl Simulation {
     fn resolve_collisions(&self, mut position: Vec2, mut velocity: Vec2) -> (Vec2, Vec2) {
         if position.x.abs() > self.half_bounds_size.x {
             position.x = self.half_bounds_size.x * position.x.signum();
-            velocity.x *= -self.collision_damping;
+            velocity.x = (velocity.x * self.collision_damping).abs() * -position.x.signum();
         }
         if position.y.abs() > self.half_bounds_size.y {
             position.y = self.half_bounds_size.y * position.y.signum();
-            velocity.y *= -self.collision_damping;
+            velocity.y = (velocity.y * self.collision_damping).abs() * -position.y.signum();
         }
 
         (position, velocity)
@@ -360,7 +370,6 @@ impl Simulation {
     fn pressure_force(&self, particle_id: usize) -> Vec2 {
         let mut pressure_force = Vec2::default();
         let position = self.positions[particle_id];
-        let velocity = self.velocities[particle_id];
         let density = self.densities[particle_id];
 
         for neighbor_id in self.neighbor_particles(particle_id) {
@@ -377,11 +386,7 @@ impl Simulation {
                 let direction = -(offset / distance);
                 let slope = self.smoothing_kernel_derivative(distance);
                 let pressure = self.shared_pressure(density, self.densities[neighbor_id]);
-                let influence = self.smoothing_kernel(distance);
-                let viscosity = (self.velocities[neighbor_id] - velocity) * influence;
-                pressure_force += pressure * direction * slope / self.densities[neighbor_id]
-                    + viscosity * self.viscosity_strength
-                ;
+                pressure_force += pressure * direction * slope / self.densities[neighbor_id];
             }
         }
 
@@ -411,6 +416,23 @@ impl Simulation {
         }
 
         -self.gravity
+    }
+
+    fn apply_viscosity_to_particle(&self, particle_id: usize) -> Vec2 {
+        let velocity = self.velocities[particle_id];
+        let position = self.positions[particle_id];
+        let mut viscosity = Vec2::default();
+
+        for neighbor_id in self.neighbor_particles(particle_id) {
+            let offset = self.positions[neighbor_id] - position;
+            let distance = offset.length().max(0.00000001);
+            if distance < self.smoothing_radius {
+                let influence = self.viscosity_kernel(distance);
+                viscosity += (self.velocities[neighbor_id] - velocity) * influence;
+            }
+        }
+
+        velocity + viscosity * self.viscosity_strength
     }
 }
 
@@ -452,7 +474,7 @@ mod tests {
                 }
             }
 
-            for smoothing_radius in [8.0, 10.0, 15.0, 20.0, 30.0] {
+            for smoothing_radius in [10.0, 15.0, 20.0, 25.0, 30.0] {
                 sim.set_smoothing_radius(smoothing_radius);
                 sim.update_regions();
 
@@ -473,8 +495,9 @@ mod tests {
 
             let mean = densities.iter().sum::<f32>() / densities.len() as f32;
             let mut max_diff = 0f32;
-            for (i, &d) in densities.iter().enumerate() {
+            for &d in densities.iter() {
                 let relative_diff = (d - mean).abs() / mean;
+                println!("    relative_diff={:.1}%", 100.0 * relative_diff);
                 max_diff = max_diff.max(relative_diff);
             }
 
