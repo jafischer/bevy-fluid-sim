@@ -1,5 +1,3 @@
-use std::f32::consts::PI;
-
 use bevy::prelude::Vec2;
 
 use crate::sim_struct::Simulation;
@@ -61,11 +59,18 @@ impl Simulation {
         self.set_smoothing_radius((smoothing_radius + increment).max(increment.abs()));
     }
 
-    pub fn adj_gravity(&mut self, increment: f32) {
-        self.gravity.y += increment;
+    pub fn adj_gravity(&mut self, increase: bool) {
+        self.gravity.y =
+            if increase { self.gravity.y * 1.10 } else { self.gravity.y / 1.10 };
     }
 
     pub fn adj_pressure(&mut self, increase: bool) {
-        self.pressure_multiplier = if increase { self.pressure_multiplier * 1.10 } else { self.pressure_multiplier / 1.10 };
+        self.pressure_multiplier =
+            if increase { self.pressure_multiplier * 1.10 } else { self.pressure_multiplier / 1.10 };
+    }
+
+    pub fn adj_viscosity(&mut self, increase: bool) {
+        self.viscosity_strength =
+            if increase { self.viscosity_strength * 1.10 } else { self.viscosity_strength / 1.10 };
     }
 }

@@ -65,13 +65,15 @@ impl KeyboardCommands {
         // L: log debug info in the next frame
         kb_cmds.add_command(KeyCode::KeyL, "Log debug info", 250, |sim, _, _, _, _| sim.log_next_frame());
         // P: toggle use of predicted positions
-        kb_cmds.add_command(KeyCode::KeyP, "Decrease pressure multiplier (shift: inc)", 250, adj_pressure);
+        kb_cmds.add_command(KeyCode::KeyP, "Decrease pressure multiplier (shift: inc)", 100, adj_pressure);
         // O: toggle use of predicted positions
         kb_cmds.add_command(KeyCode::KeyO, "Toggle use of predicted positions", 500, toggle_predicted);
         // R: reset the simulation
         kb_cmds.add_command(KeyCode::KeyR, "Reset particles", 250, |sim, _, _, _, _| sim.reset());
         // S: increase/decrease smoothing radius.
         kb_cmds.add_command(KeyCode::KeyS, "Decrease smoothing radius (shift: inc)", 250, adj_smoothing_radius);
+        // V: increase/decrease viscosity strength.
+        kb_cmds.add_command(KeyCode::KeyV, "Decrease smoothing radius (shift: inc)", 50, adj_viscosity);
         // W: "watch" the particle(s) under the cursor (color them yellow).
         // Shift-W: clear all watched particles.
         kb_cmds.add_command(KeyCode::KeyW, "Watch (highlight) particle under cursor", 250, watch_particle);
@@ -160,13 +162,14 @@ fn adj_gravity(
     _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
     msgs: &mut Single<&mut Messages>,
 ) {
+
     if shift {
-        sim.adj_gravity(0.1);
+        sim.adj_gravity(true);
     } else {
-        sim.adj_gravity(-0.1);
+        sim.adj_gravity(false);
     }
     msgs.messages.push(MessageText {
-        text: format!("Gravity: {:.1}", sim.gravity.y),
+        text: format!("Gravity: {:.1}", sim.gravity.y / sim.particle_size),
         start_time: Instant::now(),
         duration: Duration::from_secs(1),
     });
@@ -185,7 +188,7 @@ fn adj_pressure(
         sim.adj_pressure(false);
     }
     msgs.messages.push(MessageText {
-        text: format!("Pressure multiplier: {:.1}", sim.pressure_multiplier),
+        text: format!("Pressure multiplier: {:.1}", sim.pressure_multiplier / sim.particle_size),
         start_time: Instant::now(),
         duration: Duration::from_secs(1),
     });
@@ -251,14 +254,33 @@ fn adj_smoothing_radius(
     _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
     msgs: &mut Single<&mut Messages>,
 ) {
-    let factor = sim.particle_size * 0.5;
+    let factor = 0.5;
     if shift {
         sim.adj_smoothing_radius(factor);
     } else {
         sim.adj_smoothing_radius(-factor);
     }
     msgs.messages.push(MessageText {
-        text: format!("Smoothing radius: {:.2}", sim.smoothing_radius),
+        text: format!("Smoothing radius: {:.2}", sim.smoothing_radius / sim.particle_size),
+        start_time: Instant::now(),
+        duration: Duration::from_secs(1),
+    });
+}
+
+fn adj_viscosity(
+    sim: &mut Simulation,
+    shift: bool,
+    _cursor_pos: &Vec2,
+    _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
+    msgs: &mut Single<&mut Messages>,
+) {
+    if shift {
+        sim.adj_viscosity(true);
+    } else {
+        sim.adj_viscosity(false);
+    }
+    msgs.messages.push(MessageText {
+        text: format!("Viscosity strength: {:.2}", sim.viscosity_strength),
         start_time: Instant::now(),
         duration: Duration::from_secs(1),
     });
