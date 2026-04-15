@@ -114,17 +114,21 @@ impl Simulation {
     pub fn place_particles(&mut self) {
         let (grid_size, cols, rows) = self.subdivide_into_squares();
 
-        let pos_start = Vec2 {
-            x: -self.half_bounds_size.x,
-            y: -self.half_bounds_size.y * 0.8,
+        // We'll place the particles in a grid that's smaller than the window, and with a random starting position.
+        const GRID_SCALE: f32 = 0.8;
+        const MAX_GRID_OFFSET: f32 = (1.0 - GRID_SCALE) * 2.0;
+
+        let start_pos = Vec2 {
+            x: self.half_bounds_size.x * (-1.0 + random::<f32>() * MAX_GRID_OFFSET),
+            y: self.half_bounds_size.y * (-1.0 + random::<f32>() * MAX_GRID_OFFSET),
         };
 
         for i in 0..self.num_particles {
             let row = i / cols;
             let col = i % cols;
 
-            let x = pos_start.x + col as f32 * grid_size * 0.8;
-            let y = pos_start.y + row as f32 * grid_size * 0.9;
+            let x = start_pos.x + col as f32 * grid_size * GRID_SCALE;
+            let y = start_pos.y + row as f32 * grid_size * GRID_SCALE;
             self.positions[i] = Vec2::new(x, y);
             self.predicted_positions[i] = self.positions[i];
             self.velocities[i] = Vec2::ZERO;
@@ -134,8 +138,7 @@ impl Simulation {
 
         // Set the target density based on the current density of the center particle.
         if self.target_density == 0.0 {
-            self.target_density = self.calculate_density((rows / 2) * cols + (cols / 2)) * 0.8;
-            println!("Target density: {}", self.target_density);
+            self.target_density = self.calculate_density((rows / 2) * cols + (cols / 2)) * 0.7;
         }
     }
 
@@ -484,7 +487,7 @@ mod tests {
                     smoothing_radius: 0.0,
                     gravity: 0.0,
                     speed: 0.0,
-                    pressure_multiplier: 0,
+                    pressure_multiplier: 100000,
                     viscosity_strength: 0.0,
                     collision_damping: 0.0,
                     interaction_input_radius: 0,
