@@ -48,7 +48,7 @@ impl KeyboardCommands {
         kb_cmds.add_command(KeyCode::Space, "Pause", 250, pause);
 
         // 1: advance 1 frames.
-        kb_cmds.add_command(KeyCode::Digit1, "Advance 1 frame", 500, |sim, _, _, _, _| sim.set_frames_to_show(1));
+        kb_cmds.add_command(KeyCode::Digit1, "Advance 1 frame", 50, |sim, _, _, _, _| sim.set_frames_to_show(1));
         // A: toggle velocity arrows
         kb_cmds.add_command(KeyCode::KeyA, "Toggle velocity arrows", 250, |sim, _, _, _, _| sim.toggle_arrows());
         // C: toggle display of smoothing radius circle.

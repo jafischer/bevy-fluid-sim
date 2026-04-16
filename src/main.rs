@@ -134,12 +134,12 @@ fn update_particles(
             let density_ratio = (sim.densities[particle.id] - sim.min_density) / sim.max_density;
             let density_scale = density_ratio.powf(2.0);
             let rgb = COLD + density_scale * (HOT - COLD);
-            Color::linear_rgb(rgb.x, rgb.y, rgb.z)
+            Color::linear_rgba(rgb.x, rgb.y, rgb.z, 0.2)
         } else {
             let speed_ratio = sim.velocities[particle.id].length() / sim.max_velocity;
-            let speed_scale = speed_ratio.powf(0.25);
+            let speed_scale = speed_ratio.powf(1.0 / 4.0);
             let rgb = STOPPED + speed_scale * (FAST - STOPPED);
-            Color::linear_rgb(rgb.x, rgb.y, rgb.z)
+            Color::linear_rgba(rgb.x, rgb.y, rgb.z, 0.2)
         };
 
         commands.entity(entity).insert(Sprite {
