@@ -402,10 +402,11 @@ impl Simulation {
                     let pressure = self.shared_pressure(density, self.densities[neighbor_id]);
                     pressure_force += pressure * direction * slope / self.densities[neighbor_id];
                 } else {
-                    // Move toward the center, plus a random vector.
-                    pressure_force += (Vec2::new(random::<f32>() - 0.5, random::<f32>() - 0.5)
-                        + (Vec2::ZERO - position))
-                        * self.particle_size;
+                    // Move randomly toward the interior.
+                    let inward = (Vec2::ZERO - position) * Vec2::new(random::<f32>(), random::<f32>());
+                    // Make it a unit vector.
+                    let inward = inward / inward.length();
+                    pressure_force += inward * self.particle_size;
                 }
             }
         }
