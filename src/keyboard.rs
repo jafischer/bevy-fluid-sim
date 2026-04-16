@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use bevy::app::AppExit;
 use bevy::input::ButtonInput;
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
 
 use crate::particle::Particle;
 use crate::sim_struct::Simulation;
@@ -47,7 +48,7 @@ impl KeyboardCommands {
         kb_cmds.add_command(KeyCode::Space, "Pause", 250, pause);
 
         // 1: advance 1 frames.
-        kb_cmds.add_command(KeyCode::Digit1, "Advance 1 frame", 500, |sim, _, _, _, _| sim.set_frames_to_show(1));
+        kb_cmds.add_command(KeyCode::Digit1, "Advance 1 frame", 50, |sim, _, _, _, _| sim.set_frames_to_show(1));
         // A: toggle velocity arrows
         kb_cmds.add_command(KeyCode::KeyA, "Toggle velocity arrows", 250, |sim, _, _, _, _| sim.toggle_arrows());
         // C: toggle display of smoothing radius circle.
@@ -319,63 +320,67 @@ pub fn handle_keypress(
     kb: Res<ButtonInput<KeyCode>>,
     mut app_exit: MessageWriter<AppExit>,
     mut sim: Single<&mut Simulation>,
-    camera_query: Single<(&Camera, &GlobalTransform)>,
     mut particle_query: Query<(&mut Transform, &mut Particle)>,
-    window: Single<&Window>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    cameras_query: Query<(&Camera, &GlobalTransform)>,
     mut kb_cmds: Single<&mut KeyboardCommands>,
     mut messages: Single<&mut Messages>,
 ) {
-    // Esc / Q: quit the app
-    if kb.pressed(KeyCode::Escape) || kb.pressed(KeyCode::KeyQ) {
-        app_exit.write(AppExit::Success);
-    }
+    if let Ok(window) = windows.single() {
+        // Esc / Q: quit the app
+        if kb.pressed(KeyCode::Escape) || kb.pressed(KeyCode::KeyQ) {
+            app_exit.write(AppExit::Success);
+        }
 
-    // ?: display help
-    if kb.just_pressed(KeyCode::Slash) && (kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight)) {
-        let mut kb_help: String = "Keyboard commands:".into();
-        // Are we already displaying it?
-        for message in &messages.messages {
-            if message.text.starts_with(&kb_help) {
-                return;
+        // ?: display help
+        if kb.just_pressed(KeyCode::Slash) && (kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight)) {
+            let mut kb_help: String = "Keyboard commands:".into();
+            // Are we already displaying it?
+            for message in &messages.messages {
+                if message.text.starts_with(&kb_help) {
+                    return;
+                }
             }
+
+            for (_key, cmd) in kb_cmds.commands.iter() {
+                kb_help.push('\n');
+                kb_help.push_str(&format!("{:5} - {}", cmd.key_text, cmd.description));
+            }
+            kb_help.push_str("\nEsc   - Quit");
+
+            messages.messages.push(MessageText {
+                text: kb_help,
+                start_time: Instant::now(),
+                duration: Duration::from_secs(5),
+            });
         }
 
-        for (_key, cmd) in kb_cmds.commands.iter() {
-            kb_help.push('\n');
-            kb_help.push_str(&format!("{:5} - {}", cmd.key_text, cmd.description));
-        }
-        kb_help.push_str("\nEsc   - Quit");
+        let now = Instant::now();
+        let cursor_pos = if let Some(cursor_position) = window.cursor_position() {
+            let Some((camera, camera_transform)) = cameras_query.iter().next() else {
+                return;
+            };
 
-        messages.messages.push(MessageText {
-            text: kb_help,
-            start_time: Instant::now(),
-            duration: Duration::from_secs(5),
-        });
-    }
+            // Calculate a world position based on the cursor's position.
+            camera
+                .viewport_to_world_2d(camera_transform, cursor_position)
+                .unwrap_or(Vec2::splat(f32::MAX))
+        } else {
+            Vec2::splat(f32::MAX)
+        };
 
-    let now = Instant::now();
-    let cursor_pos = if let Some(cursor_position) = window.cursor_position() {
-        let (camera, camera_transform) = *camera_query;
-
-        // Calculate a world position based on the cursor's position.
-        camera
-            .viewport_to_world_2d(camera_transform, cursor_position)
-            .unwrap_or(Vec2::splat(f32::MAX))
-    } else {
-        Vec2::splat(f32::MAX)
-    };
-
-    for key in kb.get_pressed() {
-        if let Some(command) = kb_cmds.commands.get_mut(key) {
-            if now.duration_since(command.last_action_time) >= command.interval {
-                command.last_action_time = now;
-                (command.action)(
-                    &mut sim,
-                    kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight),
-                    &cursor_pos,
-                    &mut particle_query,
-                    &mut messages,
-                );
+        for key in kb.get_pressed() {
+            if let Some(command) = kb_cmds.commands.get_mut(key) {
+                if now.duration_since(command.last_action_time) >= command.interval {
+                    command.last_action_time = now;
+                    (command.action)(
+                        &mut sim,
+                        kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight),
+                        &cursor_pos,
+                        &mut particle_query,
+                        &mut messages,
+                    );
+                }
             }
         }
     }
