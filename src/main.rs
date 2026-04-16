@@ -12,11 +12,11 @@ use std::sync::Mutex;
 use bevy::color::palettes::basic::*;
 use bevy::color::palettes::css::GOLD;
 use bevy::prelude::*;
-use bevy::window::{PresentMode, WindowResized, WindowResolution};
+use bevy::window::{PresentMode, PrimaryWindow, WindowResized, WindowResolution};
 use clap::Parser;
 use once_cell::sync::Lazy;
 
-use crate::args::{Args};
+use crate::args::Args;
 use crate::keyboard::{handle_keypress, KeyboardCommands};
 use crate::messages::{display_messages, spawn_messages, MessageText, Messages};
 use crate::particle::Particle;
@@ -26,7 +26,6 @@ use crate::sim_struct::Simulation;
 struct FpsText;
 
 static ARGS: Lazy<Args> = Lazy::new(Args::parse);
-
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let win_size: Vec<_> = ARGS.win.split(',').collect();
@@ -112,11 +111,11 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
 }
 
 // Some color definitions for blending.
-const COLD: Vec3 = Vec3::new(0.0, 0.0, 0.6);
-const HOT: Vec3 = Vec3::new(1.0, 0.0, 0.0);
+const COLD: Vec3 = Vec3::new(0.0, 0.0, 0.5);
+const HOT: Vec3 = Vec3::new(1.0, 0.0, 0.5);
 
-const STOPPED: Vec3 = Vec3::new(0.1, 0.1, 0.1);
-const FAST: Vec3 = Vec3::new(1.0, 1.0, 1.0);
+const STOPPED: Vec3 = Vec3::new(0.1, 0.1, 0.5);
+const FAST: Vec3 = Vec3::new(0.8, 1.0, 0.0);
 
 fn update_particles(
     mut commands: Commands,
@@ -133,12 +132,12 @@ fn update_particles(
             Color::linear_rgb(1.0, 1.0, 0.0)
         } else if sim.debug.use_heatmap {
             let density_ratio = (sim.densities[particle.id] - sim.min_density) / sim.max_density;
-            let density_scale = density_ratio.powf(1.0);
+            let density_scale = density_ratio.powf(2.0);
             let rgb = COLD + density_scale * (HOT - COLD);
             Color::linear_rgb(rgb.x, rgb.y, rgb.z)
         } else {
             let speed_ratio = sim.velocities[particle.id].length() / sim.max_velocity;
-            let speed_scale = speed_ratio.powf(0.33);
+            let speed_scale = speed_ratio.powf(0.25);
             let rgb = STOPPED + speed_scale * (FAST - STOPPED);
             Color::linear_rgb(rgb.x, rgb.y, rgb.z)
         };
@@ -208,29 +207,33 @@ fn draw_debug_info(
 // Handles clicks on the plane that reposition the object.
 fn handle_mouse_clicks(
     buttons: Res<ButtonInput<MouseButton>>,
-    camera_query: Single<(&Camera, &GlobalTransform)>,
     mut sim: Single<&mut Simulation>,
-    window: Single<&Window>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    cameras_query: Query<(&Camera, &GlobalTransform)>,
 ) {
-    sim.interaction_input_strength = 0.0;
+    if let Ok(window) = windows.single() {
+        sim.interaction_input_strength = 0.0;
 
-    let left_click = buttons.pressed(MouseButton::Left);
-    let right_click = buttons.pressed(MouseButton::Right);
-    if !left_click && !right_click {
-        return;
+        let left_click = buttons.pressed(MouseButton::Left);
+        let right_click = buttons.pressed(MouseButton::Right);
+        if !left_click && !right_click {
+            return;
+        }
+        let Some(cursor_position) = window.cursor_position() else {
+            return;
+        };
+        let Some((camera, camera_transform)) = cameras_query.iter().next() else {
+            return;
+        };
+
+        // Calculate a world position based on the cursor's position.
+        let Ok(point) = camera.viewport_to_world_2d(camera_transform, cursor_position) else {
+            return;
+        };
+
+        sim.interaction_input_strength = ARGS.interaction_input_strength * if left_click { 1.0 } else { -1.0 };
+        sim.interaction_input_point = point;
     }
-    let Some(cursor_position) = window.cursor_position() else {
-        return;
-    };
-    let (camera, camera_transform) = *camera_query;
-
-    // Calculate a world position based on the cursor's position.
-    let Ok(point) = camera.viewport_to_world_2d(camera_transform, cursor_position) else {
-        return;
-    };
-
-    sim.interaction_input_strength = ARGS.interaction_input_strength * if left_click { 1.0 } else { -1.0 };
-    sim.interaction_input_point = point;
 }
 
 fn on_resize(mut resize_reader: MessageReader<WindowResized>, mut sim: Single<&mut Simulation>) {

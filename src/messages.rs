@@ -18,11 +18,20 @@ pub struct Messages {
 pub fn spawn_messages(commands: &mut Commands) {
     // Dynamic message text
     let mut messages = Messages { messages: vec![] };
-    messages.messages.push(MessageText {
-        text: "Left-click to attract, right-click to repel\n\nPress ? for keyboard commands".into(),
-        start_time: Instant::now(),
-        duration: Duration::from_secs(2),
-    });
+
+    if cfg!(debug_assertions) {
+        messages.messages.push(MessageText {
+            text: "NOTE: the debug version looks like garbage.\nRun the release version for a better experience".into(),
+            start_time: Instant::now(),
+            duration: Duration::from_secs(3),
+        });
+    } else {
+        messages.messages.push(MessageText {
+            text: "Left-click to attract, right-click to repel\n\nPress ? for keyboard commands".into(),
+            start_time: Instant::now(),
+            duration: Duration::from_secs(2),
+        });
+    }
 
     commands.spawn((
         Text2d::default(),

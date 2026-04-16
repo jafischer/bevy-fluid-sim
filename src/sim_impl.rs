@@ -71,7 +71,7 @@ impl Simulation {
                 show_fps: false,
                 show_smoothing_radius: false,
                 show_region_grid: false,
-                use_heatmap: true,
+                use_heatmap: false,
                 show_arrows: false,
                 use_predicted_positions: false,
             },
@@ -157,16 +157,36 @@ impl Simulation {
             self.apply_velocities(delta);
             self.apply_viscosity();
 
-            self.min_velocity = f32::MAX;
-            self.max_velocity = 0.0;
-            self.min_density = f32::MAX;
-            self.max_density = 0.0;
+            let mut min_velocity = f32::MAX;
+            let mut max_velocity = 0f32;
+            let mut min_density = f32::MAX;
+            let mut max_density = 0f32;
 
             for i in 0..self.num_particles {
-                self.min_density = self.min_density.min(self.densities[i]);
-                self.max_density = self.max_density.max(self.densities[i]);
-                self.min_velocity = self.min_velocity.min(self.velocities[i].length());
-                self.max_velocity = self.max_velocity.max(self.velocities[i].length());
+                min_density = min_density.min(self.densities[i]);
+                max_density = max_density.max(self.densities[i]);
+                min_velocity = min_velocity.min(self.velocities[i].length());
+                max_velocity = max_velocity.max(self.velocities[i].length());
+            }
+            if min_velocity < self.min_velocity {
+                self.min_velocity = min_velocity;
+            } else {
+                self.min_velocity += (min_velocity - self.min_velocity) * 0.001;
+            }
+            if max_velocity > self.max_velocity {
+                self.max_velocity = max_velocity;
+            } else {
+                self.max_velocity -= (self.max_velocity - max_velocity) * 0.001;
+            }
+            if min_density < self.min_density {
+                self.min_density = min_density;
+            } else {
+                self.min_density += (min_density - self.min_density) * 0.001;
+            }
+            if max_density > self.max_density {
+                self.max_density = max_density;
+            } else {
+                self.max_density -= (self.max_density - max_density) * 0.001;
             }
         }
     }

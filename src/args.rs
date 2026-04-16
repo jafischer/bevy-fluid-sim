@@ -10,11 +10,11 @@ pub struct Args {
 
     /// Number of particles
     #[cfg(debug_assertions)]
-    #[arg(long, default_value = "10000", visible_alias = "num")]
+    #[arg(long, default_value = "5000", visible_alias = "num")]
     pub num_particles: usize,
     /// Number of particles
     #[cfg(not(debug_assertions))]
-    #[arg(long, default_value = "25000", visible_alias = "num")]
+    #[arg(long, default_value = "30000", visible_alias = "num")]
     pub num_particles: usize,
     /// Smoothing radius, as a multiple of particle size (e.g. 8.0 = 8x particle diameter).
     #[arg(long, default_value = "10.0")]
