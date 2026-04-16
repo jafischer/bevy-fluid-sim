@@ -86,7 +86,18 @@ impl Simulation {
         let smoothing_radius = smoothing_radius * self.particle_size;
 
         self.smoothing_radius = smoothing_radius;
-        // The scaling factors are the volume of the corresponding kernel functions over the smoothing radius.
+        // In Sebastian's video, he describes the reason behind these scaling factors at 5:41:
+        // https://www.youtube.com/watch?v=rSKMYc1CQHE&t=341s
+        // In short, the scaling factors are the volume of the corresponding kernel functions over the
+        // circle defined by the smoothing radius.
+        // So with smoothing radius s, and distance from particle d, the volume of the kernel function `(s - d)^3`
+        // is
+        // ∫[0..2π] ∫[0..s] (s-x)^3 x dx dθ
+        // which solves to
+        // π s^5 / 10
+        // See https://www.wolframalpha.com/input?i2d=true&i=Integrate%5BPower%5B%5C%2840%29s-x%5C%2841%29%2C3%5Dx%2C%7Bx%2C0%2Cs%7D%2C%7B%CE%B8%2C0%2C2%CF%80%7D%5D
+        //
+        // We're inverting that result here so that we can multiply the function by the scaling factor, rather than divide by it.
         self.smoothing_scaling_factor = 10.0 / (PI * smoothing_radius.powf(5.0));
         self.smoothing_derivative_scaling_factor = 30.0 / (PI * smoothing_radius.powf(5.0));
         self.viscosity_scaling_factor = 6.0 / (PI * smoothing_radius.powf(4.0));
