@@ -202,7 +202,7 @@ fn toggle_heatmap(
     msgs: &mut Single<&mut Messages>,
 ) {
     sim.toggle_heatmap();
-    if sim.debug.use_heatmap {
+    if sim.debug.density_heatmap {
         msgs.messages.push(MessageText {
             text: "Density heatmap".into(),
             start_time: Instant::now(),

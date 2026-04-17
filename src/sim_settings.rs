@@ -28,7 +28,7 @@ impl Simulation {
     }
 
     pub fn toggle_heatmap(&mut self) {
-        self.debug.use_heatmap = !self.debug.use_heatmap;
+        self.debug.density_heatmap = !self.debug.density_heatmap;
     }
 
     pub fn reset_inertia(&mut self) {

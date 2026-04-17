@@ -72,7 +72,7 @@ pub struct DebugParams {
     pub show_fps: bool,
     pub show_smoothing_radius: bool,
     pub show_region_grid: bool,
-    pub use_heatmap: bool,
+    pub density_heatmap: bool,
     pub show_arrows: bool,
     pub use_predicted_positions: bool,
 }

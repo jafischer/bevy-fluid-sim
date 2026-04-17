@@ -130,11 +130,11 @@ fn update_particles(
         transform.translation.y = sim.positions[particle.id].y;
         let color = if particle.watched {
             Color::linear_rgb(1.0, 1.0, 0.0)
-        } else if sim.debug.use_heatmap {
-            let density_ratio = (sim.densities[particle.id] - sim.min_density) / sim.max_density;
-            let density_scale = density_ratio.powf(2.0);
+        } else if sim.debug.density_heatmap {
+            let density_ratio = (sim.densities[particle.id] - sim.min_density) / (sim.max_density - sim.min_density);
+            let density_scale = density_ratio.powf(0.5);
             let rgb = COLD + density_scale * (HOT - COLD);
-            Color::linear_rgba(rgb.x, rgb.y, rgb.z, 0.2)
+            Color::linear_rgba(rgb.x, rgb.y, rgb.z, 0.5)
         } else {
             let speed_ratio = sim.velocities[particle.id].length() / sim.max_velocity;
             let speed_scale = speed_ratio.powf(1.0 / 4.0);

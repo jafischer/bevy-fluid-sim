@@ -71,7 +71,7 @@ impl Simulation {
                 show_fps: false,
                 show_smoothing_radius: false,
                 show_region_grid: false,
-                use_heatmap: false,
+                density_heatmap: false,
                 show_arrows: false,
                 use_predicted_positions: false,
             },
