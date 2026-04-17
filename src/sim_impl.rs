@@ -39,7 +39,6 @@ impl Simulation {
             viscosity_scaling_factor: 0.0,
             num_particles: args.num_particles,
             particle_size,
-            sprite_size: args.sprite_size,
             half_bounds_size: Vec2::new(window_width, window_height) / 2.0 - particle_size / 2.0,
             gravity: Vec2::new(0.0, args.gravity * particle_size),
             target_density: 0.0,
@@ -71,7 +70,7 @@ impl Simulation {
                 show_fps: false,
                 show_smoothing_radius: false,
                 show_region_grid: false,
-                use_heatmap: false,
+                density_heatmap: false,
                 show_arrows: false,
                 use_predicted_positions: false,
             },
@@ -104,21 +103,12 @@ impl Simulation {
     }
 
     pub fn spawn_particles(&mut self, commands: &mut Commands) {
-        let color = Color::linear_rgb(0.3, 0.5, 1.0);
-
         self.place_particles();
 
         for i in 0..self.num_particles {
             let particle = Particle { id: i, watched: false };
 
-            commands.spawn((
-                Sprite {
-                    color,
-                    custom_size: Some(Vec2::splat(self.particle_size * self.sprite_size)),
-                    ..Default::default()
-                },
-                particle,
-            ));
+            commands.spawn((Sprite::default(), particle));
         }
     }
 
@@ -179,25 +169,28 @@ impl Simulation {
                 min_velocity = min_velocity.min(self.velocities[i].length());
                 max_velocity = max_velocity.max(self.velocities[i].length());
             }
+
+            // Slowly bring the mins and maxes toward the recent values.
+            const ADJUST_RATE: f32 = 0.01;
             if min_velocity < self.min_velocity {
                 self.min_velocity = min_velocity;
             } else {
-                self.min_velocity += (min_velocity - self.min_velocity) * 0.001;
+                self.min_velocity += (min_velocity - self.min_velocity) * ADJUST_RATE;
             }
             if max_velocity > self.max_velocity {
                 self.max_velocity = max_velocity;
             } else {
-                self.max_velocity -= (self.max_velocity - max_velocity) * 0.001;
+                self.max_velocity -= (self.max_velocity - max_velocity) * ADJUST_RATE;
             }
             if min_density < self.min_density {
                 self.min_density = min_density;
             } else {
-                self.min_density += (min_density - self.min_density) * 0.001;
+                self.min_density += (min_density - self.min_density) * ADJUST_RATE;
             }
             if max_density > self.max_density {
                 self.max_density = max_density;
             } else {
-                self.max_density -= (self.max_density - max_density) * 0.001;
+                self.max_density -= (self.max_density - max_density) * ADJUST_RATE;
             }
         }
     }
@@ -208,31 +201,47 @@ impl Simulation {
 
     pub fn end_frame(&mut self) {
         if self.debug.log_frame == self.debug.current_frame {
-            println!("{self:?}");
-            println!();
-            let lowest_density = self.densities.iter().cloned().reduce(f32::min).unwrap();
-            let highest_density = self.densities.iter().cloned().reduce(f32::max).unwrap();
-            let average_density = self.densities.iter().cloned().sum::<f32>() / self.num_particles as f32;
-
-            let lowest_velocity = self.velocities.iter().map(|v| v.length()).reduce(f32::min).unwrap();
-            let highest_velocity = self.velocities.iter().map(|v| v.length()).reduce(f32::max).unwrap();
-            let average_velocity = self.velocities.iter().map(|v| v.length()).sum::<f32>() / self.num_particles as f32;
-            println!("density:  min:     {}", self.min_density);
-            println!("          lowest:  {lowest_density}");
-            println!("          highest: {highest_density}");
-            println!("          max:     {}", self.max_density);
-            println!("          avg:     {average_density}");
-            println!("velocity: min:     {}", self.min_velocity);
-            println!("          lowest:  {lowest_velocity}");
-            println!("          highest: {highest_velocity}");
-            println!("          max:     {}", self.max_velocity);
-            println!("          avg:     {average_velocity}");
+            self.log_stats();
         }
 
         self.debug.current_frame += 1;
         if self.debug.frames_to_show > 0 {
             self.debug.frames_to_show -= 1;
         }
+    }
+
+    fn log_stats(&mut self) {
+        println!("{self:?}");
+
+        println!();
+        let lowest_density = self.densities.iter().cloned().reduce(f32::min).unwrap();
+        let highest_density = self.densities.iter().cloned().reduce(f32::max).unwrap();
+        let average_density = self.densities.iter().cloned().sum::<f32>() / self.num_particles as f32;
+
+        let lowest_velocity = self.velocities.iter().map(|v| v.length()).reduce(f32::min).unwrap();
+        let highest_velocity = self.velocities.iter().map(|v| v.length()).reduce(f32::max).unwrap();
+        let average_velocity = self.velocities.iter().map(|v| v.length()).sum::<f32>() / self.num_particles as f32;
+        println!("density:  min:     {}", self.min_density);
+        println!("          lowest:  {lowest_density}");
+        println!("          highest: {highest_density}");
+        println!("          max:     {}", self.max_density);
+        println!("          avg:     {average_density}");
+        println!("velocity: min:     {}", self.min_velocity);
+        println!("          lowest:  {lowest_velocity}");
+        println!("          highest: {highest_velocity}");
+        println!("          max:     {}", self.max_velocity);
+        println!("          avg:     {average_velocity}");
+
+        let mut min_region = usize::MAX;
+        let mut max_region = 0usize;
+        for region_row in &self.regions {
+            for region_cell in region_row {
+                min_region = min_region.min(region_cell.len());
+                max_region = max_region.max(region_cell.len());
+            }
+        }
+        println!();
+        println!("Region min: {min_region}, max: {max_region}");
     }
 
     fn subdivide_into_squares(&self) -> (f32, usize, usize) {
@@ -452,17 +461,16 @@ impl Simulation {
         // Mouse buttons generate pseudo gravity/repulsion at mouse location.
         if self.interaction_input_strength != 0.0 {
             let input_point_offset = self.interaction_input_point - pos;
-            let sqr_distance = input_point_offset.dot(input_point_offset);
-            if sqr_distance < self.interaction_input_radius * self.interaction_input_radius {
-                let distance = sqr_distance.sqrt();
-                let edge_t = distance / self.interaction_input_radius;
-                let centre_t = 1.0 - edge_t;
+            let distance = input_point_offset.length();
+            if distance < self.interaction_input_radius {
+                let distance_ratio = distance / self.interaction_input_radius;
+                let center = 1.0 - distance_ratio;
                 let dir_to_centre = input_point_offset / distance;
 
-                let gravity_weight = 1.0 - (centre_t * (self.interaction_input_strength / 10.0).clamp(0.0, 1.0));
+                let gravity_weight = 1.0 - (center * (self.interaction_input_strength / 10.0).clamp(0.0, 1.0));
                 let mut accel =
-                    -self.gravity * gravity_weight + dir_to_centre * centre_t * self.interaction_input_strength;
-                accel -= velocity * centre_t;
+                    -self.gravity * gravity_weight + dir_to_centre * center * self.interaction_input_strength;
+                accel -= velocity * center;
                 return accel;
             }
         }

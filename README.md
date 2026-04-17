@@ -26,17 +26,21 @@ looks... fluid adjacent.
 
 ## Update, April 2026
 
-Almost 2 years later, I revisited this project and undid some of my embarrassing
-math goofs, and finally have something much more fluid-like. I also added real
-viscosity (just copied straight from the video), instead of the temporary speed
-limit hack in the original.
+Almost 2 years later, I revisited this project and undid some of my
+math goofs, tuned and re-tuned the various parameters, and finally have
+something much more fluid-like. I also added real viscosity (just copied
+straight from the video), instead of the temporary speed limit hack in the
+original.
 
 It's still very dependent on the right choice of values for several parameters,
 but it's getting better.
 
-![more fluidy](./Screenshot-2026-04-15-at-10.24.50-AM.png).
+![more fluidy](./Screenshot-2026-04-15-at-10.24.50-AM.png)
 
 # Running the App
+
+If you use RustRover as your IDE, you can run the app with no special steps
+necessary. The following info is related to running from the command line.
 
 ## Dynamically-Linked Build for Development
 

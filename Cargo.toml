@@ -1,6 +1,6 @@
 [package]
 name = "bevy-fluid-sim"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 
 # Enable a large amount of optimization in the dev profile for dependencies.
@@ -29,9 +29,10 @@ bevy_dynamic = ["bevy/dynamic_linking"]
 # On Windows (as an example):
 # PATH=%USERPROFILE\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin\;.\target\debug\deps\;.\target\release\deps
 bevy = { version = "0.18", features = ["multi_threaded"] }
-bevy_lunex = "0.6"
+bevy_embedded_assets = "0"
 # Command line arg processing.
 clap = { version = "4.5.8", features = ["derive"] }
+image = "0"
 # once_cell: lazily-initialized statics
 once_cell = "1.20.3"
 # Random

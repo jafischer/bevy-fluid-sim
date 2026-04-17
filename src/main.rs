@@ -1,4 +1,5 @@
 mod args;
+mod circle;
 mod keyboard;
 mod messages;
 mod particle;
@@ -13,6 +14,7 @@ use bevy::color::palettes::basic::*;
 use bevy::color::palettes::css::GOLD;
 use bevy::prelude::*;
 use bevy::window::{PresentMode, PrimaryWindow, WindowResized, WindowResolution};
+use bevy_embedded_assets::EmbeddedAssetPlugin;
 use clap::Parser;
 use once_cell::sync::Lazy;
 
@@ -25,7 +27,7 @@ use crate::sim_struct::Simulation;
 #[derive(Component)]
 struct FpsText;
 
-static ARGS: Lazy<Args> = Lazy::new(Args::parse);
+pub static ARGS: Lazy<Args> = Lazy::new(Args::parse);
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let win_size: Vec<_> = ARGS.win.split(',').collect();
@@ -38,14 +40,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     App::new()
         // Background color
         .insert_resource(ClearColor(Color::linear_rgb(0.0, 0.0, 0.05)))
-        .add_plugins((DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                present_mode: PresentMode::AutoNoVsync,
-                resolution: WindowResolution::new(width, height),
+        .add_plugins((
+            DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    present_mode: PresentMode::AutoNoVsync,
+                    resolution: WindowResolution::new(width, height),
+                    ..default()
+                }),
                 ..default()
             }),
-            ..default()
-        }),))
+            EmbeddedAssetPlugin::default(),
+        ))
         .add_systems(Startup, setup)
         .add_systems(
             Update,
@@ -65,13 +70,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn setup(mut commands: Commands, window: Single<&Window>) {
-    // Create the simulation and add it to ECS.
-    let mut sim = Simulation::new(
-        window.width(),
-        window.height(),
-        &ARGS,
-    );
     commands.spawn(Camera2d);
+
+    // Create the simulation and add it to ECS.
+    let mut sim = Simulation::new(window.width(), window.height(), &ARGS);
+
     sim.spawn_particles(&mut commands);
     commands.spawn(sim);
 
@@ -95,7 +98,6 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
             font_size: 16.0,
             ..default()
         },
-        // Set the justification of the Text
         TextLayout::new_with_justify(Justify::Right),
         Node {
             position_type: PositionType::Absolute,
@@ -111,39 +113,44 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
 }
 
 // Some color definitions for blending.
-const COLD: Vec3 = Vec3::new(0.0, 0.0, 0.5);
-const HOT: Vec3 = Vec3::new(1.0, 0.0, 0.5);
+const COLD: Vec3 = Vec3::new(0.0, 0.0, 0.6);
+const HOT: Vec3 = Vec3::new(1.0, 0.2, 0.2);
 
 const STOPPED: Vec3 = Vec3::new(0.1, 0.1, 0.5);
-const FAST: Vec3 = Vec3::new(0.8, 1.0, 0.0);
+const FAST: Vec3 = Vec3::new(0.9, 1.0, 0.0);
 
 fn update_particles(
     mut commands: Commands,
     mut particle_query: Query<(Entity, &mut Transform, &mut Particle)>,
-    time: Res<Time>,
+    // time: Res<Time>,
     mut sim: Single<&mut Simulation>,
+    asset_server: Res<AssetServer>,
 ) {
-    sim.update_particles(time.delta_secs());
+    sim.update_particles(1.0 / 60.0); // time.delta_secs());
+
+    let image = asset_server.load("embedded://blurred-circle-pow-2.0.png");
+    let custom_size = Some(Vec2::splat(sim.particle_size * ARGS.sprite_size));
 
     particle_query.iter_mut().for_each(|(entity, mut transform, particle)| {
         transform.translation.x = sim.positions[particle.id].x;
         transform.translation.y = sim.positions[particle.id].y;
         let color = if particle.watched {
             Color::linear_rgb(1.0, 1.0, 0.0)
-        } else if sim.debug.use_heatmap {
-            let density_ratio = (sim.densities[particle.id] - sim.min_density) / sim.max_density;
+        } else if sim.debug.density_heatmap {
+            let density_ratio = (sim.densities[particle.id] - sim.min_density) / (sim.max_density - sim.min_density);
             let density_scale = density_ratio.powf(2.0);
             let rgb = COLD + density_scale * (HOT - COLD);
-            Color::linear_rgba(rgb.x, rgb.y, rgb.z, 0.2)
+            Color::linear_rgb(rgb.x, rgb.y, rgb.z)
         } else {
             let speed_ratio = sim.velocities[particle.id].length() / sim.max_velocity;
             let speed_scale = speed_ratio.powf(1.0 / 4.0);
             let rgb = STOPPED + speed_scale * (FAST - STOPPED);
-            Color::linear_rgba(rgb.x, rgb.y, rgb.z, 0.2)
+            Color::linear_rgb(rgb.x, rgb.y, rgb.z)
         };
 
         commands.entity(entity).insert(Sprite {
-            custom_size: Some(Vec2::splat(sim.particle_size * ARGS.sprite_size)),
+            image: image.clone(),
+            custom_size,
             color,
             ..Default::default()
         });
@@ -204,7 +211,7 @@ fn draw_debug_info(
     }
 }
 
-// Handles clicks on the plane that reposition the object.
+// Handles mouse clicks to attract/repel particles.
 fn handle_mouse_clicks(
     buttons: Res<ButtonInput<MouseButton>>,
     mut sim: Single<&mut Simulation>,
@@ -236,9 +243,17 @@ fn handle_mouse_clicks(
     }
 }
 
-fn on_resize(mut resize_reader: MessageReader<WindowResized>, mut sim: Single<&mut Simulation>) {
-    for e in resize_reader.read() {
-        // When resolution is being changed
-        sim.on_resize(e.width, e.height);
+fn on_resize(
+    mut resize_reader: MessageReader<WindowResized>,
+    mut sim: Single<&mut Simulation>,
+    windows: Query<Entity, With<PrimaryWindow>>,
+) {
+    if let Ok(primary) = windows.single() {
+        for e in resize_reader.read() {
+            // Only process resize for the primary window.
+            if e.window == primary {
+                sim.on_resize(e.width, e.height);
+            }
+        }
     }
 }
