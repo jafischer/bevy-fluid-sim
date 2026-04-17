@@ -5,6 +5,11 @@ use crate::sim_struct::Simulation;
 impl Simulation {
     pub fn reset(&mut self) {
         self.place_particles();
+        
+        self.min_velocity = f32::MAX;
+        self.max_velocity = 0f32;
+        self.min_density = f32::MAX;
+        self.max_density = 0f32;
     }
 
     pub fn frames_to_advance(&self) -> u32 {
