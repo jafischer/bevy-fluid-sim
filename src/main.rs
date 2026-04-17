@@ -120,10 +120,10 @@ const FAST: Vec3 = Vec3::new(0.8, 1.0, 0.0);
 fn update_particles(
     mut commands: Commands,
     mut particle_query: Query<(Entity, &mut Transform, &mut Particle)>,
-    time: Res<Time>,
+    // time: Res<Time>,
     mut sim: Single<&mut Simulation>,
 ) {
-    sim.update_particles(time.delta_secs());
+    sim.update_particles(1.0/60.0); // time.delta_secs());
 
     particle_query.iter_mut().for_each(|(entity, mut transform, particle)| {
         transform.translation.x = sim.positions[particle.id].x;
