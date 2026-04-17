@@ -6,21 +6,26 @@ mod sim_impl;
 mod sim_settings;
 mod sim_struct;
 
-use std::ops::{Deref, DerefMut};
-use std::sync::Mutex;
-
+use bevy::camera::visibility::RenderLayers;
+use bevy::camera::RenderTarget;
 use bevy::color::palettes::basic::*;
 use bevy::color::palettes::css::GOLD;
 use bevy::prelude::*;
-use bevy::window::{PresentMode, PrimaryWindow, WindowResized, WindowResolution};
+use bevy::window::{PresentMode, PrimaryWindow, WindowRef, WindowResized, WindowResolution};
 use clap::Parser;
 use once_cell::sync::Lazy;
+use std::ops::{Deref, DerefMut};
+use std::sync::Mutex;
 
 use crate::args::Args;
 use crate::keyboard::{handle_keypress, KeyboardCommands};
 use crate::messages::{display_messages, spawn_messages, MessageText, Messages};
 use crate::particle::Particle;
 use crate::sim_struct::Simulation;
+
+const UI_WIDTH: u32 = 500;
+const UI_HEIGHT: u32 = 600;
+const START_POS: IVec2 = IVec2 { x: 800, y: 100 };
 
 #[derive(Component)]
 struct FpsText;
@@ -42,6 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             primary_window: Some(Window {
                 present_mode: PresentMode::AutoNoVsync,
                 resolution: WindowResolution::new(width, height),
+                position: WindowPosition::At(START_POS),
                 ..default()
             }),
             ..default()
@@ -66,12 +72,46 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn setup(mut commands: Commands, window: Single<&Window>) {
     // Create the simulation and add it to ECS.
-    let mut sim = Simulation::new(
-        window.width(),
-        window.height(),
-        &ARGS,
-    );
+    let mut sim = Simulation::new(window.width(), window.height(), &ARGS);
+
     commands.spawn(Camera2d);
+
+    let scale = window.scale_factor();
+
+    // Spawn a second window.
+    let ui_size = WindowResolution::new(300, 500);
+
+    let secondary_window = commands
+        .spawn(
+            Window {
+                title: "Adjustable Parameters".to_owned(),
+                resolution: ui_size.clone(),
+                position: WindowPosition::At(IVec2::new(START_POS.x - 20 - (ui_size.width() * scale) as i32, START_POS.y)),
+                ..default()
+            },
+        )
+        .id();
+
+    // Spawn a second camera.
+    let secondary_camera = commands
+        .spawn((
+            Camera2d,
+            // This camera will only render entities belonging to render layer `1`.
+            RenderLayers::layer(1),
+            // Without an explicit render target, this camera would also target the primary window.
+            RenderTarget::Window(WindowRef::Entity(secondary_window)),
+        ))
+        .id();
+
+    let node = Node {
+        position_type: PositionType::Absolute,
+        top: Val::Px(0.0),
+        left: Val::Px(0.0),
+        ..default()
+    };
+
+    // commands.spawn((node, UiTargetCamera(secondary_camera)));
+
     sim.spawn_particles(&mut commands);
     commands.spawn(sim);
 
@@ -111,8 +151,8 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
 }
 
 // Some color definitions for blending.
-const COLD: Vec3 = Vec3::new(0.0, 0.0, 0.5);
-const HOT: Vec3 = Vec3::new(1.0, 0.0, 0.5);
+const COLD: Vec3 = Vec3::new(0.0, 0.0, 0.6);
+const HOT: Vec3 = Vec3::new(1.0, 0.2, 0.2);
 
 const STOPPED: Vec3 = Vec3::new(0.1, 0.1, 0.5);
 const FAST: Vec3 = Vec3::new(0.8, 1.0, 0.0);
@@ -236,9 +276,17 @@ fn handle_mouse_clicks(
     }
 }
 
-fn on_resize(mut resize_reader: MessageReader<WindowResized>, mut sim: Single<&mut Simulation>) {
-    for e in resize_reader.read() {
-        // When resolution is being changed
-        sim.on_resize(e.width, e.height);
+fn on_resize(
+    mut resize_reader: MessageReader<WindowResized>,
+    mut sim: Single<&mut Simulation>,
+    windows: Query<Entity, With<PrimaryWindow>>,
+) {
+    if let Ok(primary) = windows.single() {
+        for e in resize_reader.read() {
+            // Only process resize for the primary window.
+            if e.window == primary {
+                sim.on_resize(e.width, e.height);
+            }
+        }
     }
 }
