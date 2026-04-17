@@ -11,7 +11,6 @@ pub struct Simulation {
     pub viscosity_scaling_factor: f32,
     pub num_particles: usize,
     pub particle_size: f32,
-    pub sprite_size: f32,
     pub half_bounds_size: Vec2,
 
     // Adjustable parameters

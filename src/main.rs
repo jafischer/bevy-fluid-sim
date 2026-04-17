@@ -1,4 +1,5 @@
 mod args;
+mod circle;
 mod keyboard;
 mod messages;
 mod particle;
@@ -6,16 +7,16 @@ mod sim_impl;
 mod sim_settings;
 mod sim_struct;
 
-use bevy::camera::visibility::RenderLayers;
-use bevy::camera::RenderTarget;
+use std::ops::{Deref, DerefMut};
+use std::sync::Mutex;
+
 use bevy::color::palettes::basic::*;
 use bevy::color::palettes::css::GOLD;
 use bevy::prelude::*;
-use bevy::window::{PresentMode, PrimaryWindow, WindowRef, WindowResized, WindowResolution};
+use bevy::window::{PresentMode, PrimaryWindow, WindowResized, WindowResolution};
+use bevy_embedded_assets::EmbeddedAssetPlugin;
 use clap::Parser;
 use once_cell::sync::Lazy;
-use std::ops::{Deref, DerefMut};
-use std::sync::Mutex;
 
 use crate::args::Args;
 use crate::keyboard::{handle_keypress, KeyboardCommands};
@@ -23,14 +24,10 @@ use crate::messages::{display_messages, spawn_messages, MessageText, Messages};
 use crate::particle::Particle;
 use crate::sim_struct::Simulation;
 
-const UI_WIDTH: u32 = 500;
-const UI_HEIGHT: u32 = 600;
-const START_POS: IVec2 = IVec2 { x: 800, y: 100 };
-
 #[derive(Component)]
 struct FpsText;
 
-static ARGS: Lazy<Args> = Lazy::new(Args::parse);
+pub static ARGS: Lazy<Args> = Lazy::new(Args::parse);
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let win_size: Vec<_> = ARGS.win.split(',').collect();
@@ -43,15 +40,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     App::new()
         // Background color
         .insert_resource(ClearColor(Color::linear_rgb(0.0, 0.0, 0.05)))
-        .add_plugins((DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                present_mode: PresentMode::AutoNoVsync,
-                resolution: WindowResolution::new(width, height),
-                position: WindowPosition::At(START_POS),
+        .add_plugins((
+            DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    present_mode: PresentMode::AutoNoVsync,
+                    resolution: WindowResolution::new(width, height),
+                    ..default()
+                }),
                 ..default()
             }),
-            ..default()
-        }),))
+            EmbeddedAssetPlugin::default(),
+        ))
         .add_systems(Startup, setup)
         .add_systems(
             Update,
@@ -71,46 +70,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn setup(mut commands: Commands, window: Single<&Window>) {
-    // Create the simulation and add it to ECS.
-    let mut sim = Simulation::new(window.width(), window.height(), &ARGS);
-
     commands.spawn(Camera2d);
 
-    let scale = window.scale_factor();
-
-    // Spawn a second window.
-    let ui_size = WindowResolution::new(300, 500);
-
-    let secondary_window = commands
-        .spawn(
-            Window {
-                title: "Adjustable Parameters".to_owned(),
-                resolution: ui_size.clone(),
-                position: WindowPosition::At(IVec2::new(START_POS.x - 20 - (ui_size.width() * scale) as i32, START_POS.y)),
-                ..default()
-            },
-        )
-        .id();
-
-    // Spawn a second camera.
-    let secondary_camera = commands
-        .spawn((
-            Camera2d,
-            // This camera will only render entities belonging to render layer `1`.
-            RenderLayers::layer(1),
-            // Without an explicit render target, this camera would also target the primary window.
-            RenderTarget::Window(WindowRef::Entity(secondary_window)),
-        ))
-        .id();
-
-    let node = Node {
-        position_type: PositionType::Absolute,
-        top: Val::Px(0.0),
-        left: Val::Px(0.0),
-        ..default()
-    };
-
-    // commands.spawn((node, UiTargetCamera(secondary_camera)));
+    // Create the simulation and add it to ECS.
+    let mut sim = Simulation::new(window.width(), window.height(), &ARGS);
 
     sim.spawn_particles(&mut commands);
     commands.spawn(sim);
@@ -135,7 +98,6 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
             font_size: 16.0,
             ..default()
         },
-        // Set the justification of the Text
         TextLayout::new_with_justify(Justify::Right),
         Node {
             position_type: PositionType::Absolute,
@@ -155,15 +117,19 @@ const COLD: Vec3 = Vec3::new(0.0, 0.0, 0.6);
 const HOT: Vec3 = Vec3::new(1.0, 0.2, 0.2);
 
 const STOPPED: Vec3 = Vec3::new(0.1, 0.1, 0.5);
-const FAST: Vec3 = Vec3::new(0.8, 1.0, 0.0);
+const FAST: Vec3 = Vec3::new(0.9, 1.0, 0.0);
 
 fn update_particles(
     mut commands: Commands,
     mut particle_query: Query<(Entity, &mut Transform, &mut Particle)>,
     // time: Res<Time>,
     mut sim: Single<&mut Simulation>,
+    asset_server: Res<AssetServer>,
 ) {
-    sim.update_particles(1.0/60.0); // time.delta_secs());
+    sim.update_particles(1.0 / 60.0); // time.delta_secs());
+
+    let image = asset_server.load("embedded://blurred-circle-pow-2.0.png");
+    let custom_size = Some(Vec2::splat(sim.particle_size * ARGS.sprite_size));
 
     particle_query.iter_mut().for_each(|(entity, mut transform, particle)| {
         transform.translation.x = sim.positions[particle.id].x;
@@ -172,18 +138,19 @@ fn update_particles(
             Color::linear_rgb(1.0, 1.0, 0.0)
         } else if sim.debug.density_heatmap {
             let density_ratio = (sim.densities[particle.id] - sim.min_density) / (sim.max_density - sim.min_density);
-            let density_scale = density_ratio.powf(0.5);
+            let density_scale = density_ratio.powf(2.0);
             let rgb = COLD + density_scale * (HOT - COLD);
-            Color::linear_rgba(rgb.x, rgb.y, rgb.z, 0.5)
+            Color::linear_rgb(rgb.x, rgb.y, rgb.z)
         } else {
             let speed_ratio = sim.velocities[particle.id].length() / sim.max_velocity;
             let speed_scale = speed_ratio.powf(1.0 / 4.0);
             let rgb = STOPPED + speed_scale * (FAST - STOPPED);
-            Color::linear_rgba(rgb.x, rgb.y, rgb.z, 0.2)
+            Color::linear_rgb(rgb.x, rgb.y, rgb.z)
         };
 
         commands.entity(entity).insert(Sprite {
-            custom_size: Some(Vec2::splat(sim.particle_size * ARGS.sprite_size)),
+            image: image.clone(),
+            custom_size,
             color,
             ..Default::default()
         });
@@ -244,7 +211,7 @@ fn draw_debug_info(
     }
 }
 
-// Handles clicks on the plane that reposition the object.
+// Handles mouse clicks to attract/repel particles.
 fn handle_mouse_clicks(
     buttons: Res<ButtonInput<MouseButton>>,
     mut sim: Single<&mut Simulation>,

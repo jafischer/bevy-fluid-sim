@@ -38,6 +38,6 @@ pub struct Args {
     #[arg(long, default_value = "700", visible_alias = "is")]
     pub interaction_input_strength: f32,
     /// Size of the particle sprite, relative to particle size.
-    #[arg(long, default_value = "2.0", visible_alias = "ss")]
+    #[arg(long, default_value = "3.0", visible_alias = "ss")]
     pub sprite_size: f32,
 }

@@ -39,7 +39,6 @@ impl Simulation {
             viscosity_scaling_factor: 0.0,
             num_particles: args.num_particles,
             particle_size,
-            sprite_size: args.sprite_size,
             half_bounds_size: Vec2::new(window_width, window_height) / 2.0 - particle_size / 2.0,
             gravity: Vec2::new(0.0, args.gravity * particle_size),
             target_density: 0.0,
@@ -104,21 +103,12 @@ impl Simulation {
     }
 
     pub fn spawn_particles(&mut self, commands: &mut Commands) {
-        let color = Color::linear_rgb(0.3, 0.5, 1.0);
-
         self.place_particles();
 
         for i in 0..self.num_particles {
             let particle = Particle { id: i, watched: false };
 
-            commands.spawn((
-                Sprite {
-                    color,
-                    custom_size: Some(Vec2::splat(self.particle_size * self.sprite_size)),
-                    ..Default::default()
-                },
-                particle,
-            ));
+            commands.spawn((Sprite::default(), particle));
         }
     }
 
