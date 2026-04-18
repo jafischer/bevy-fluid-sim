@@ -104,7 +104,7 @@ fn setup(mut commands: Commands, window: Single<&Window>, asset_server: Res<Asse
         },
     ));
 
-    // Spawn the popup message component.
+    // Spawn the notification message component.
     spawn_messages(&mut commands);
 
     // Keyboard commands component
