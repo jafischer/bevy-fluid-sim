@@ -12,14 +12,15 @@ pub struct Simulation {
     pub num_particles: usize,
     pub particle_size: f32,
     pub half_bounds_size: Vec2,
+    pub target_density: f32,
 
     // Adjustable parameters
     pub gravity: Vec2,
-    pub target_density: f32,
     pub pressure_multiplier: f32,
     pub viscosity_strength: f32,
     pub collision_damping: f32,
     pub speed: f32,
+    pub sprite_size: f32,
     pub interaction_input_strength: f32,
     pub interaction_input_radius: f32,
 
@@ -31,7 +32,7 @@ pub struct Simulation {
     pub region_rows: usize,
     pub region_cols: usize,
     pub regions: Vec<Vec<Vec<usize>>>,
-    pub interaction_input_point: Vec2,
+    pub interaction_input_point: Option<Vec2>,
     pub min_velocity: f32,
     pub max_velocity: f32,
     pub min_density: f32,
