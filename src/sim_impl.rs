@@ -4,9 +4,9 @@ use bevy::prelude::*;
 use rand::random;
 use rayon::prelude::*;
 
+use crate::Particle;
 use crate::args::Args;
 use crate::sim_struct::{DebugParams, Simulation};
-use crate::Particle;
 
 const OFFSETS_2D: [(i32, i32); 9] = [
     (-1, 1),
@@ -39,6 +39,7 @@ impl Simulation {
             viscosity_scaling_factor: 0.0,
             num_particles: args.num_particles,
             particle_size,
+            sprite_size: args.sprite_size,
             half_bounds_size: Vec2::new(window_width, window_height) / 2.0 - particle_size / 2.0,
             gravity: Vec2::new(0.0, args.gravity * particle_size),
             target_density: 0.0,
@@ -47,9 +48,9 @@ impl Simulation {
             speed: args.speed,
 
             viscosity_strength: args.viscosity_strength,
-            interaction_input_strength: 0.0,
+            interaction_input_strength: args.interaction_input_strength,
             interaction_input_radius: args.interaction_input_radius as f32 * particle_size,
-            interaction_input_point: Vec2::ZERO,
+            interaction_input_point: None,
 
             positions,
             predicted_positions,
@@ -459,8 +460,8 @@ impl Simulation {
         let velocity = self.velocities[particle_id];
 
         // Mouse buttons generate pseudo gravity/repulsion at mouse location.
-        if self.interaction_input_strength != 0.0 {
-            let input_point_offset = self.interaction_input_point - pos;
+        if let Some(interaction_input_point) = self.interaction_input_point {
+            let input_point_offset = interaction_input_point - pos;
             let distance = input_point_offset.length();
             if distance < self.interaction_input_radius {
                 let distance_ratio = distance / self.interaction_input_radius;

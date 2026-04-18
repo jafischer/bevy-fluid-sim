@@ -1,14 +1,11 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-use bevy::app::AppExit;
-use bevy::input::ButtonInput;
 use bevy::prelude::*;
-use bevy::window::PrimaryWindow;
 
-use crate::particle::Particle;
+use crate::MessageText;
+use crate::components::*;
 use crate::sim_struct::Simulation;
-use crate::{MessageText, Messages};
 
 /// Defines a keyboard command to associate with a keypress.
 /// Each command can have a different repeat rate.
@@ -29,14 +26,8 @@ type KeyboardAction = fn(
     // current mouse cursor position
     cursor_pos: &Vec2,
     particle_query: &mut Query<(&mut Transform, &mut Particle)>,
-    messages: &mut Single<&mut Messages>,
+    messages: &mut Single<&mut Notifications>,
 );
-
-/// Contains the collection of keyboard commands.
-#[derive(Component)]
-pub struct KeyboardCommands {
-    pub commands: BTreeMap<KeyCode, KeyboardCommand>,
-}
 
 impl KeyboardCommands {
     pub fn create() -> Self {
@@ -137,7 +128,7 @@ fn pause(
     _shift: bool,
     _cursor_pos: &Vec2,
     _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
-    _msgs: &mut Single<&mut Messages>,
+    _msgs: &mut Single<&mut Notifications>,
 ) {
     if sim.frames_to_advance() == 0 {
         sim.set_frames_to_show(u32::MAX);
@@ -151,7 +142,7 @@ fn toggle_fps(
     _shift: bool,
     _cursor_pos: &Vec2,
     _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
-    _msgs: &mut Single<&mut Messages>,
+    _msgs: &mut Single<&mut Notifications>,
 ) {
     sim.toggle_fps();
 }
@@ -161,7 +152,7 @@ fn adj_gravity(
     shift: bool,
     _cursor_pos: &Vec2,
     _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
-    msgs: &mut Single<&mut Messages>,
+    msgs: &mut Single<&mut Notifications>,
 ) {
     if shift {
         sim.adj_gravity(true);
@@ -180,7 +171,7 @@ fn adj_pressure(
     shift: bool,
     _cursor_pos: &Vec2,
     _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
-    msgs: &mut Single<&mut Messages>,
+    msgs: &mut Single<&mut Notifications>,
 ) {
     if shift {
         sim.adj_pressure(true);
@@ -199,7 +190,7 @@ fn toggle_heatmap(
     _shift: bool,
     _cursor_pos: &Vec2,
     _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
-    msgs: &mut Single<&mut Messages>,
+    msgs: &mut Single<&mut Notifications>,
 ) {
     sim.toggle_heatmap();
     if sim.debug.density_heatmap {
@@ -222,7 +213,7 @@ fn reset_inertia(
     _shift: bool,
     _cursor_pos: &Vec2,
     _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
-    msgs: &mut Single<&mut Messages>,
+    msgs: &mut Single<&mut Notifications>,
 ) {
     sim.reset_inertia();
     msgs.messages.push(MessageText {
@@ -237,7 +228,7 @@ fn toggle_predicted(
     _shift: bool,
     _cursor_pos: &Vec2,
     _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
-    msgs: &mut Single<&mut Messages>,
+    msgs: &mut Single<&mut Notifications>,
 ) {
     sim.toggle_predicted();
     msgs.messages.push(MessageText {
@@ -252,7 +243,7 @@ fn adj_smoothing_radius(
     shift: bool,
     _cursor_pos: &Vec2,
     _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
-    msgs: &mut Single<&mut Messages>,
+    msgs: &mut Single<&mut Notifications>,
 ) {
     let factor = 0.5;
     if shift {
@@ -272,7 +263,7 @@ fn adj_viscosity(
     shift: bool,
     _cursor_pos: &Vec2,
     _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
-    msgs: &mut Single<&mut Messages>,
+    msgs: &mut Single<&mut Notifications>,
 ) {
     if shift {
         sim.adj_viscosity(true);
@@ -291,7 +282,7 @@ fn watch_particle(
     shift: bool,
     cursor_pos: &Vec2,
     particle_query: &mut Query<(&mut Transform, &mut Particle)>,
-    _msgs: &mut Single<&mut Messages>,
+    _msgs: &mut Single<&mut Notifications>,
 ) {
     if shift {
         particle_query
@@ -311,77 +302,5 @@ fn watch_particle(
                 particle.watched = true;
             }
         });
-    }
-}
-
-// No real choice about the number of arguments here. ECS gonna ECS.
-#[allow(clippy::too_many_arguments)]
-pub fn handle_keypress(
-    kb: Res<ButtonInput<KeyCode>>,
-    mut app_exit: MessageWriter<AppExit>,
-    mut sim: Single<&mut Simulation>,
-    mut particle_query: Query<(&mut Transform, &mut Particle)>,
-    windows: Query<&Window, With<PrimaryWindow>>,
-    cameras_query: Query<(&Camera, &GlobalTransform)>,
-    mut kb_cmds: Single<&mut KeyboardCommands>,
-    mut messages: Single<&mut Messages>,
-) {
-    if let Ok(window) = windows.single() {
-        // Esc / Q: quit the app
-        if kb.pressed(KeyCode::Escape) || kb.pressed(KeyCode::KeyQ) {
-            app_exit.write(AppExit::Success);
-        }
-
-        // ?: display help
-        if kb.just_pressed(KeyCode::Slash) && (kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight)) {
-            let mut kb_help: String = "Keyboard commands:".into();
-            // Are we already displaying it?
-            for message in &messages.messages {
-                if message.text.starts_with(&kb_help) {
-                    return;
-                }
-            }
-
-            for (_key, cmd) in kb_cmds.commands.iter() {
-                kb_help.push('\n');
-                kb_help.push_str(&format!("{:5} - {}", cmd.key_text, cmd.description));
-            }
-            kb_help.push_str("\nEsc   - Quit");
-
-            messages.messages.push(MessageText {
-                text: kb_help,
-                start_time: Instant::now(),
-                duration: Duration::from_secs(5),
-            });
-        }
-
-        let now = Instant::now();
-        let cursor_pos = if let Some(cursor_position) = window.cursor_position() {
-            let Some((camera, camera_transform)) = cameras_query.iter().next() else {
-                return;
-            };
-
-            // Calculate a world position based on the cursor's position.
-            camera
-                .viewport_to_world_2d(camera_transform, cursor_position)
-                .unwrap_or(Vec2::splat(f32::MAX))
-        } else {
-            Vec2::splat(f32::MAX)
-        };
-
-        for key in kb.get_pressed() {
-            if let Some(command) = kb_cmds.commands.get_mut(key) {
-                if now.duration_since(command.last_action_time) >= command.interval {
-                    command.last_action_time = now;
-                    (command.action)(
-                        &mut sim,
-                        kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight),
-                        &cursor_pos,
-                        &mut particle_query,
-                        &mut messages,
-                    );
-                }
-            }
-        }
     }
 }

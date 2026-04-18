@@ -1,42 +1,31 @@
 mod args;
-mod circle;
+mod components;
+mod events;
 mod keyboard;
 mod messages;
-mod particle;
 mod sim_impl;
 mod sim_settings;
 mod sim_struct;
+mod update;
 
-use std::ops::{Deref, DerefMut};
-use std::sync::Mutex;
-
-use bevy::color::palettes::basic::*;
 use bevy::color::palettes::css::GOLD;
 use bevy::prelude::*;
-use bevy::window::{PresentMode, PrimaryWindow, WindowResized, WindowResolution};
+use bevy::window::{PresentMode, WindowResolution};
 use bevy_embedded_assets::EmbeddedAssetPlugin;
 use clap::Parser;
-use once_cell::sync::Lazy;
 
 use crate::args::Args;
-use crate::keyboard::{handle_keypress, KeyboardCommands};
-use crate::messages::{display_messages, spawn_messages, MessageText, Messages};
-use crate::particle::Particle;
+use crate::components::*;
+use crate::events::{handle_keypress, handle_mouse_clicks, on_resize};
+use crate::messages::{MessageText, display_messages, spawn_messages};
 use crate::sim_struct::Simulation;
-
-#[derive(Component)]
-struct FpsText;
-
-pub static ARGS: Lazy<Args> = Lazy::new(Args::parse);
+use crate::update::{draw_debug_info, update_fps, update_particles};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let win_size: Vec<_> = ARGS.win.split(',').collect();
-    if win_size.len() != 2 {
-        return Err("Incorrect window size".into());
-    }
-    let width: u32 = win_size[0].parse()?;
-    let height: u32 = win_size[1].parse()?;
+    let args = Args::parse();
+    let (width, height) = args.win_size()?;
 
+    // Create and run the Bevy App.
     App::new()
         // Background color
         .insert_resource(ClearColor(Color::linear_rgb(0.0, 0.0, 0.05)))
@@ -49,9 +38,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }),
                 ..default()
             }),
+            // The EmbeddedAssetPlugin loads all files under assets/ (at compile time) and makes them available via
+            // asset_server.load("embedded://filename").
             EmbeddedAssetPlugin::default(),
         ))
+        // Add our startup function, setup().
         .add_systems(Startup, setup)
+        // Add the functions that will be called once per update.
         .add_systems(
             Update,
             (
@@ -64,16 +57,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 display_messages,
             ),
         )
+        .insert_resource(ArgsResource(args))
         .run();
 
     Ok(())
 }
 
-fn setup(mut commands: Commands, window: Single<&Window>) {
+fn setup(mut commands: Commands, window: Single<&Window>, asset_server: Res<AssetServer>, args: Res<ArgsResource>) {
     commands.spawn(Camera2d);
 
     // Create the simulation and add it to ECS.
-    let mut sim = Simulation::new(window.width(), window.height(), &ARGS);
+    // Note: the simulation isn't well-integrated into Bevy ECS at all. Perhaps I will try, at some point,
+    // to move the many buffers inside the Simulation struct (e.g. positions, velocities, densities, and so on)
+    // into ECS, but it was easier to just stick them inside Simulation while developing.
+    // It would be interesting to see what, if any, impact moving them to ECS has on performance.
+    let mut sim = Simulation::new(window.width(), window.height(), &args.0);
 
     sim.spawn_particles(&mut commands);
     commands.spawn(sim);
@@ -91,9 +89,9 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
         FpsText,
     ));
 
-    // Display the number of particles.
+    // Add a text display of the number of particles.
     commands.spawn((
-        Text::new(format!("{} particles", ARGS.num_particles)),
+        Text::new(format!("{} particles", args.0.num_particles)),
         TextFont {
             font_size: 16.0,
             ..default()
@@ -106,154 +104,14 @@ fn setup(mut commands: Commands, window: Single<&Window>) {
         },
     ));
 
+    // Spawn the popup message component.
     spawn_messages(&mut commands);
 
     // Keyboard commands component
     commands.spawn(KeyboardCommands::create());
-}
 
-// Some color definitions for blending.
-const COLD: Vec3 = Vec3::new(0.0, 0.0, 0.6);
-const HOT: Vec3 = Vec3::new(1.0, 0.2, 0.2);
-
-const STOPPED: Vec3 = Vec3::new(0.1, 0.1, 0.5);
-const FAST: Vec3 = Vec3::new(0.9, 1.0, 0.0);
-
-fn update_particles(
-    mut commands: Commands,
-    mut particle_query: Query<(Entity, &mut Transform, &mut Particle)>,
-    // time: Res<Time>,
-    mut sim: Single<&mut Simulation>,
-    asset_server: Res<AssetServer>,
-) {
-    sim.update_particles(1.0 / 60.0); // time.delta_secs());
-
-    let image = asset_server.load("embedded://blurred-circle-pow-2.0.png");
-    let custom_size = Some(Vec2::splat(sim.particle_size * ARGS.sprite_size));
-
-    particle_query.iter_mut().for_each(|(entity, mut transform, particle)| {
-        transform.translation.x = sim.positions[particle.id].x;
-        transform.translation.y = sim.positions[particle.id].y;
-        let color = if particle.watched {
-            Color::linear_rgb(1.0, 1.0, 0.0)
-        } else if sim.debug.density_heatmap {
-            let density_ratio = (sim.densities[particle.id] - sim.min_density) / (sim.max_density - sim.min_density);
-            let density_scale = density_ratio.powf(2.0);
-            let rgb = COLD + density_scale * (HOT - COLD);
-            Color::linear_rgb(rgb.x, rgb.y, rgb.z)
-        } else {
-            let speed_ratio = sim.velocities[particle.id].length() / sim.max_velocity;
-            let speed_scale = speed_ratio.powf(1.0 / 4.0);
-            let rgb = STOPPED + speed_scale * (FAST - STOPPED);
-            Color::linear_rgb(rgb.x, rgb.y, rgb.z)
-        };
-
-        commands.entity(entity).insert(Sprite {
-            image: image.clone(),
-            custom_size,
-            color,
-            ..Default::default()
-        });
+    // Load the image for the sprites.
+    commands.spawn(SpriteImage {
+        handle: asset_server.load("embedded://blurred-circle-pow-2.0.png"),
     });
-
-    sim.end_frame();
-}
-
-static TOT_FPS: Lazy<Mutex<f32>> = Lazy::new(|| Mutex::new(0.0));
-
-fn update_fps(mut query: Query<(&mut Text, &FpsText)>, time: Res<Time>, sim: Single<&Simulation>) {
-    for (mut span, _) in &mut query {
-        if time.delta_secs() == 0.0 {
-            return;
-        }
-
-        let cur_fps = 1.0 / time.delta_secs();
-        let mut tot_fps = TOT_FPS.lock().unwrap();
-
-        *tot_fps.deref_mut() += cur_fps;
-        if sim.debug.show_fps {
-            **span = format!("FPS: {:5.1} / avg {:.1}", cur_fps, tot_fps.deref() / (sim.debug.current_frame as f32));
-        } else if !span.is_empty() {
-            **span = String::new();
-        }
-    }
-}
-
-fn draw_debug_info(
-    mut gizmos: Gizmos,
-    sim: Single<&Simulation>,
-    particle_query: Query<(&mut Transform, &mut Particle)>,
-    time: Res<Time>,
-) {
-    if sim.debug.show_arrows {
-        particle_query.iter().for_each(|(transform, particle)| {
-            let arrow_end = transform.translation.xy() + sim.velocities[particle.id] * time.delta_secs();
-            gizmos
-                .arrow(transform.translation.xy().extend(0.0), arrow_end.extend(0.0), YELLOW)
-                .with_tip_length(sim.particle_size);
-        });
-    }
-    if sim.debug.show_smoothing_radius {
-        gizmos.circle_2d(sim.positions[0], sim.smoothing_radius, LIME);
-    }
-    if sim.debug.show_region_grid {
-        let bottom = -sim.half_bounds_size.y;
-        let left = -sim.half_bounds_size.x;
-        for row in 0..sim.region_rows {
-            for col in 0..sim.region_cols {
-                gizmos.rect_2d(
-                    Vec2::new(left + col as f32 * sim.smoothing_radius, bottom + row as f32 * sim.smoothing_radius),
-                    Vec2::splat(sim.smoothing_radius),
-                    GRAY,
-                );
-            }
-        }
-    }
-}
-
-// Handles mouse clicks to attract/repel particles.
-fn handle_mouse_clicks(
-    buttons: Res<ButtonInput<MouseButton>>,
-    mut sim: Single<&mut Simulation>,
-    windows: Query<&Window, With<PrimaryWindow>>,
-    cameras_query: Query<(&Camera, &GlobalTransform)>,
-) {
-    if let Ok(window) = windows.single() {
-        sim.interaction_input_strength = 0.0;
-
-        let left_click = buttons.pressed(MouseButton::Left);
-        let right_click = buttons.pressed(MouseButton::Right);
-        if !left_click && !right_click {
-            return;
-        }
-        let Some(cursor_position) = window.cursor_position() else {
-            return;
-        };
-        let Some((camera, camera_transform)) = cameras_query.iter().next() else {
-            return;
-        };
-
-        // Calculate a world position based on the cursor's position.
-        let Ok(point) = camera.viewport_to_world_2d(camera_transform, cursor_position) else {
-            return;
-        };
-
-        sim.interaction_input_strength = ARGS.interaction_input_strength * if left_click { 1.0 } else { -1.0 };
-        sim.interaction_input_point = point;
-    }
-}
-
-fn on_resize(
-    mut resize_reader: MessageReader<WindowResized>,
-    mut sim: Single<&mut Simulation>,
-    windows: Query<Entity, With<PrimaryWindow>>,
-) {
-    if let Ok(primary) = windows.single() {
-        for e in resize_reader.read() {
-            // Only process resize for the primary window.
-            if e.window == primary {
-                sim.on_resize(e.width, e.height);
-            }
-        }
-    }
 }

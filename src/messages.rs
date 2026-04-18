@@ -1,7 +1,9 @@
 use std::time::{Duration, Instant};
 
-use bevy::math::Vec3;
-use bevy::prelude::{default, Commands, Component, Justify, Query, Text2d, TextFont, TextLayout, Transform};
+use bevy::prelude::*;
+use bevy::sprite::Text2dShadow;
+
+use crate::components::Notifications;
 
 #[derive(Clone)]
 pub struct MessageText {
@@ -10,26 +12,22 @@ pub struct MessageText {
     pub duration: Duration,
 }
 
-#[derive(Component)]
-pub struct Messages {
-    pub messages: Vec<MessageText>,
-}
-
 pub fn spawn_messages(commands: &mut Commands) {
     // Dynamic message text
-    let mut messages = Messages { messages: vec![] };
+    let mut messages = Notifications { messages: vec![] };
 
+    // Add the startup message.
     if cfg!(debug_assertions) {
         messages.messages.push(MessageText {
-            text: "NOTE: the debug version looks like garbage.\nRun the release version for a better experience".into(),
+            text: "   NOTE: the debug version looks like garbage.\nRun the release version for a better experience.\n\n         Click the mouse to continue...".into(),
             start_time: Instant::now(),
-            duration: Duration::from_secs(3),
+            duration: Duration::MAX,
         });
     } else {
         messages.messages.push(MessageText {
-            text: "Left-click to attract, right-click to repel\n\nPress ? for keyboard commands".into(),
+            text: "Left/right-click & drag to make the fluid dance!\n\n       Press ? for keyboard commands.\n\n       Click the mouse to continue...".into(),
             start_time: Instant::now(),
-            duration: Duration::from_secs(2),
+            duration: Duration::MAX,
         });
     }
 
@@ -41,24 +39,23 @@ pub fn spawn_messages(commands: &mut Commands) {
         },
         TextLayout::new_with_justify(Justify::Left),
         Transform::from_translation(Vec3::new(0.0, 2.0, 1.0)),
+        Text2dShadow {
+            offset: Vec2::new(2., -2.),
+            color: Color::BLACK,
+        },
         messages,
     ));
 }
 
-pub fn display_messages(mut query: Query<(&mut Text2d, &mut Messages)>) {
+pub fn display_messages(mut query: Query<(&mut Text2d, &mut Notifications)>) {
     for (mut text, mut messages) in &mut query {
         // Remove expired messages
         messages.messages = messages
             .messages
             .iter()
             .filter_map(|message_text| {
-                // if let Some(msg_text) = message_text.text.as_ref() {
                 let duration = Instant::now().duration_since(message_text.start_time);
-                if duration < message_text.duration {
-                    Some(message_text.clone())
-                } else {
-                    None
-                }
+                if duration < message_text.duration { Some(message_text.clone()) } else { None }
             })
             .collect();
         **text = messages
