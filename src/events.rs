@@ -87,7 +87,7 @@ pub fn handle_keypress(
                 }
 
                 // ?: display help
-                KeyCode::Slash | KeyCode::ShiftLeft | KeyCode::ShiftRight => {
+                KeyCode::Slash if kb.pressed(KeyCode::ShiftLeft) || kb.pressed(KeyCode::ShiftRight) => {
                     let mut kb_help: String = "Keyboard commands:".into();
                     // Are we already displaying it?
                     for message in &messages.messages {
@@ -108,6 +108,8 @@ pub fn handle_keypress(
                         duration: Duration::from_secs(5),
                     });
                 }
+
+                // Other key: check the command map.
                 key => {
                     if let Some(command) = kb_cmds.commands.get_mut(key)
                         && now.duration_since(command.last_action_time) >= command.interval
