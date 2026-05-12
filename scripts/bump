@@ -15,7 +15,12 @@ main() {
   if [[ $COMMIT == "yes" ]]; then
     local extra_files version
 
-    version=$(grep '^version' Cargo.toml | awk -F'"' '{print $2}')
+    # More robust (albeit cumbersome) way of determining the project version.
+    version=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[].version' | sort -u)
+    # Ensure that all project packages have the same version (if there are multiple projects)
+    if [[ $(echo -e "$version" | wc -l | sed -e 's/ *//') != 1 ]]; then
+      die "There appear to be multiple different package versions in your project workspace."
+    fi
 
     # Include Cargo.lock if it's not ignored.
     grep Cargo.lock "$SCRIPT_DIR/../.gitignore" >& /dev/null || extra_files=Cargo.lock
@@ -184,11 +189,13 @@ log_timestamp() {
 }
 
 log_stdout() {
-  echo -e "${LC_INFO}$*$NC"
+  echo -e "${CYAN}$*$NC"
 }
 
 log_heading() {
-  local heading="$1" extra="$2" ruler
+  local heading="$1" extra="" ruler
+  # Use ${2+x} to avoid "$2: unbound variable" error since we're using "set -u".
+  [[ -n "${2+x}" ]] && extra="$2"
   # Strip ansi color codes out of the message when creating the ruler
   ruler=$(echo -n "$heading" | sed -e 's/\\x1b\[[0-9;]*m//g' | sed -e 's/./=/g')
 
@@ -216,6 +223,8 @@ die() {
 }
 
 do_or_die() {
+  log_debug "Executing:" "$@"
+
   "$@" || die "Command failed: '$*'"
 }
 
