@@ -1,38 +1,15 @@
 #!/bin/bash
 
-
 main() {
   set_globals
   parse_options "$@"
 
-  # In WSL, 'set-version.exe' might show up, so exclude that:
-  cargo --list | grep 'set-version[^.]*$' > /dev/null || {
-    log "Installing cargo-edit"
-    do_or_die cargo install cargo-edit
-  }
-  do_or_die cargo set-version --bump "$BUMP_FIELD"
+  prereqs
 
-  if [[ $COMMIT == "yes" ]]; then
-    local extra_files version
+  bump_version
 
-    # More robust (albeit cumbersome) way of determining the project version.
-    version=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[].version' | sort -u)
-    # Ensure that all project packages have the same version (if there are multiple projects)
-    if [[ $(echo -e "$version" | wc -l | sed -e 's/ *//') != 1 ]]; then
-      die "There appear to be multiple different package versions in your project workspace."
-    fi
-
-    # Include Cargo.lock if it's not ignored.
-    grep Cargo.lock "$SCRIPT_DIR/../.gitignore" >& /dev/null || extra_files=Cargo.lock
-
-    # Include version.yaml if it exists.
-    if [[ -e version.yaml ]]; then
-      extra_files="$extra_files version.yaml"
-      echo "version: $version" > version.yaml
-    fi
-    # shellcheck disable=SC2046
-    # shellcheck disable=SC2086
-    git commit $(find . -name Cargo.toml) $extra_files -m "Bump $BUMP_FIELD to $version"
+  if $COMMIT; then
+    commit_changes
   fi
 }
 
@@ -49,13 +26,14 @@ set_globals() {
   else
     BUMP_FIELD="patch"
   fi
+  COMMIT=false
 }
 
 parse_options() {
   while [[ -n ${1} ]]; do
     case ${1} in
       -c | --commit)
-        COMMIT="yes"
+        COMMIT=true
         ;;
       --maj | --major)
         BUMP_FIELD="major"
@@ -92,6 +70,49 @@ usage() {
   log ""
 
   exit
+}
+
+prereqs() {
+  # Treat uninitialized variables as an error:
+  set -u
+  # If any command in a pipeline fails, that return code will be used as the return code of the whole pipeline
+  set -o pipefail
+  # Note: I prefer not to use `set -e`, but instead use `do_or_die` in front of commands that must not fail.
+
+  # In WSL, 'set-version.exe' might show up, so exclude that:
+  cargo --list | grep 'set-version[^.]*$' > /dev/null || {
+    log "Installing cargo-edit"
+    do_or_die cargo install cargo-edit
+  }
+
+  install_if_necessary jq jq "a utility for parsing JSON"
+}
+
+bump_version() {
+  do_or_die cargo set-version --bump "$BUMP_FIELD"
+}
+
+commit_changes() {
+  local extra_files version
+
+  # More robust (albeit cumbersome) way of determining the project version.
+  version=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[].version' | sort -u)
+  # Ensure that all project packages have the same version (if there are multiple projects)
+  if [[ $(echo -e "$version" | wc -l | sed -e 's/ *//') != 1 ]]; then
+    die "There appear to be multiple different package versions in your project workspace."
+  fi
+
+  # Include Cargo.lock if it's not ignored.
+  grep Cargo.lock "$SCRIPT_DIR/../.gitignore" >& /dev/null || extra_files=Cargo.lock
+
+  # Include version.yaml if it exists.
+  if [[ -e version.yaml ]]; then
+    extra_files="$extra_files version.yaml"
+    echo "version: $version" > version.yaml
+  fi
+
+  # shellcheck disable=SC2046
+  git commit $(find . -name Cargo.toml) $extra_files -m "Bump $BUMP_FIELD to $version"
 }
 
 ################################################################################
@@ -137,7 +158,6 @@ install_if_necessary() {
     fi
 
     log_heading "Installing $package ($description)."
-    # shellcheck disable=SC2034
     read -rp "Press enter when ready, Ctrl-C to quit: " ignore
     brew update
     do_or_die brew install "$package"
@@ -213,7 +233,7 @@ log_no_newline() {
 }
 
 log_debug() {
-  [[ -n "$DEBUG" ]] &&
+  [[ -n "${DEBUG+x}" ]] &&
     echo -e "$cyan$*$NC" 1>&2
 }
 
