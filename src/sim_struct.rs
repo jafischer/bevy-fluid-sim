@@ -69,6 +69,7 @@ pub struct DebugParams {
     pub current_frame: u32,
     pub frames_to_show: u32,
     pub log_frame: u32,
+    pub fixed_delta: bool,
     pub show_fps: bool,
     pub show_smoothing_radius: bool,
     pub show_region_grid: bool,

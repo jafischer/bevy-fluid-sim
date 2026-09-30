@@ -46,7 +46,7 @@ pub struct Args {
     pub interaction_input_radius: u16,
 
     /// Strength of the attraction/repulsion when mouse is clicked.
-    #[arg(long, default_value = "700", visible_alias = "is")]
+    #[arg(long, default_value = "2000", visible_alias = "is")]
     pub interaction_input_strength: f32,
 
     /// Size of the particle sprite, relative to particle size.

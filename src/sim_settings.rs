@@ -28,6 +28,10 @@ impl Simulation {
         self.debug.show_region_grid = !self.debug.show_region_grid;
     }
 
+    pub fn toggle_delta(&mut self) {
+        self.debug.fixed_delta = !self.debug.fixed_delta;
+    }
+
     pub fn toggle_fps(&mut self) {
         self.debug.show_fps = !self.debug.show_fps;
     }
