@@ -25,13 +25,14 @@ static TOT_FPS: Lazy<Mutex<f32>> = Lazy::new(|| Mutex::new(0.0));
 pub fn update_particles(
     mut commands: Commands,
     mut particle_query: Query<(Entity, &mut Transform, &mut Particle)>,
-    // time: Res<Time>,
+    time: Res<Time>,
     mut sim: Single<&mut Simulation>,
     sprite_image: Single<&SpriteImage>,
 ) {
     // I'm using a fixed delta of 1/60th of a second rather than relying on time.delta_secs()), to avoid the
     // chaos that can arise from sudden framerate pauses.
-    sim.update_particles(1.0 / 60.0); // time.delta_secs());
+    let delta = if sim.debug.fixed_delta { 1.0 / 60.0 } else { time.delta_secs() };
+    sim.update_particles(delta);
 
     let custom_size = Some(Vec2::splat(sim.particle_size * sim.sprite_size));
 
@@ -97,9 +98,11 @@ pub fn draw_debug_info(
                 .with_tip_length(sim.particle_size);
         });
     }
+
     if sim.debug.show_smoothing_radius {
-        gizmos.circle_2d(sim.positions[0], sim.smoothing_radius, LIME);
+        gizmos.circle_2d(sim.positions[sim.positions.len() / 2], sim.smoothing_radius, LIME);
     }
+
     if sim.debug.show_region_grid {
         let bottom = -sim.half_bounds_size.y;
         let left = -sim.half_bounds_size.x;

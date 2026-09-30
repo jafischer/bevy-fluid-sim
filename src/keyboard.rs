@@ -38,34 +38,40 @@ impl KeyboardCommands {
         // Space: freeze / unfreeze particle motion.
         kb_cmds.add_command(KeyCode::Space, "Pause", 250, pause);
 
-        // 1: advance 1 frames.
+        // 1: advance 1 frame.
         kb_cmds.add_command(KeyCode::Digit1, "Advance 1 frame", 50, |sim, _, _, _, _| sim.set_frames_to_show(1));
+
         // A: toggle velocity arrows
-        kb_cmds.add_command(KeyCode::KeyA, "Toggle velocity arrows", 250, |sim, _, _, _, _| sim.toggle_arrows());
+        // This was useful during development, when the number of particles is small, but it's of no use with thousands of particles Arrows are just too small, and if I make them
+        // bigger, it's just a mess and provides no value.
+        // kb_cmds.add_command(KeyCode::KeyA, "Toggle velocity arrows", 250, |sim, _, _, _, _| sim.toggle_arrows());
+
         // C: toggle display of smoothing radius circle.
-        kb_cmds.add_command(KeyCode::KeyC, "Show smoothing radius around particle 0", 250, |sim, _, _, _, _| {
+        kb_cmds.add_command(KeyCode::KeyC, "Show smoothing radius around a particle", 250, |sim, _, _, _, _| {
             sim.toggle_smoothing_radius()
         });
-        // F: toggle FPS
+        // D: toggle between fixed delta and actual frame rate.
         kb_cmds.add_command(KeyCode::KeyF, "Toggle FPS", 500, toggle_fps);
-        // G: increase/decrease gravity
+        // F: toggle FPS
+        kb_cmds.add_command(KeyCode::KeyD, "Toggle Fixed/Actual delta in calculations", 500, toggle_delta);
+        // G: adjust gravity
         kb_cmds.add_command(KeyCode::KeyG, "Decrease gravity (shift: inc)", 50, adj_gravity);
-        // H: toggle heat map
+        // H: toggle heat map type (velocity and density).
         kb_cmds.add_command(KeyCode::KeyH, "Toggle heatmap", 500, toggle_heatmap);
         // I: toggle inertia
         kb_cmds.add_command(KeyCode::KeyI, "Reset inertia", 250, reset_inertia);
         // L: log debug info in the next frame
         kb_cmds.add_command(KeyCode::KeyL, "Log debug info", 250, |sim, _, _, _, _| sim.log_next_frame());
-        // P: toggle use of predicted positions
+        // P: adjust pressure multiplier.
         kb_cmds.add_command(KeyCode::KeyP, "Decrease pressure multiplier (shift: inc)", 100, adj_pressure);
         // O: toggle use of predicted positions
         kb_cmds.add_command(KeyCode::KeyO, "Toggle use of predicted positions", 500, toggle_predicted);
         // R: reset the simulation
         kb_cmds.add_command(KeyCode::KeyR, "Reset particles", 250, |sim, _, _, _, _| sim.reset());
-        // S: increase/decrease smoothing radius.
+        // S: adjust smoothing radius.
         kb_cmds.add_command(KeyCode::KeyS, "Decrease smoothing radius (shift: inc)", 250, adj_smoothing_radius);
-        // V: increase/decrease viscosity strength.
-        kb_cmds.add_command(KeyCode::KeyV, "Decrease smoothing radius (shift: inc)", 50, adj_viscosity);
+        // V: adjust viscosity strength.
+        kb_cmds.add_command(KeyCode::KeyV, "Decrease viscosity (shift: inc)", 50, adj_viscosity);
         // W: "watch" the particle(s) under the cursor (color them yellow).
         // Shift-W: clear all watched particles.
         kb_cmds.add_command(KeyCode::KeyW, "Watch (highlight) particle under cursor", 250, watch_particle);
@@ -137,6 +143,21 @@ fn pause(
     }
 }
 
+fn toggle_delta(
+    sim: &mut Simulation,
+    _shift: bool,
+    _cursor_pos: &Vec2,
+    _particle_query: &mut Query<(&mut Transform, &mut Particle)>,
+    msgs: &mut Single<&mut Notifications>,
+) {
+    sim.toggle_delta();
+    msgs.messages.push(MessageText {
+        text: if sim.debug.fixed_delta { "Fixed delta".into() } else { "Actual delta".into() },
+        start_time: Instant::now(),
+        duration: Duration::from_secs(1),
+    });
+}
+
 fn toggle_fps(
     sim: &mut Simulation,
     _shift: bool,
@@ -193,19 +214,11 @@ fn toggle_heatmap(
     msgs: &mut Single<&mut Notifications>,
 ) {
     sim.toggle_heatmap();
-    if sim.debug.density_heatmap {
-        msgs.messages.push(MessageText {
-            text: "Density heatmap".into(),
-            start_time: Instant::now(),
-            duration: Duration::from_secs(1),
-        });
-    } else {
-        msgs.messages.push(MessageText {
-            text: "Velocity heatmap".into(),
-            start_time: Instant::now(),
-            duration: Duration::from_secs(1),
-        });
-    }
+    msgs.messages.push(MessageText {
+        text: if sim.debug.density_heatmap { "Density heatmap".into() } else { "Velocity heatmap".into() },
+        start_time: Instant::now(),
+        duration: Duration::from_secs(1),
+    });
 }
 
 fn reset_inertia(

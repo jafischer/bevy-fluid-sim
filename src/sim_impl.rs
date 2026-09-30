@@ -68,6 +68,7 @@ impl Simulation {
                 current_frame: 0,
                 frames_to_show: u32::MAX,
                 log_frame: u32::MAX,
+                fixed_delta: true,
                 show_fps: false,
                 show_smoothing_radius: false,
                 show_region_grid: false,

@@ -57,6 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 display_messages,
             ),
         )
+        // Add the command line args as a resource.
         .insert_resource(ArgsResource(args))
         .run();
 
@@ -67,13 +68,17 @@ fn setup(mut commands: Commands, window: Single<&Window>, asset_server: Res<Asse
     commands.spawn(Camera2d);
 
     // Create the simulation and add it to ECS.
-    // Note: the simulation isn't well-integrated into Bevy ECS at all. Perhaps I will try, at some point,
+    let mut sim = Simulation::new(window.width(), window.height(), &args.0);
+
+    // Note: the simulation particles are not well-integrated into Bevy ECS at all. Perhaps I will try, at some point,
     // to move the many buffers inside the Simulation struct (e.g. positions, velocities, densities, and so on)
     // into ECS, but it was easier to just stick them inside Simulation while developing.
     // It would be interesting to see what, if any, impact moving them to ECS has on performance.
-    let mut sim = Simulation::new(window.width(), window.height(), &args.0);
-
+    //
+    // For now, I just store a simple Particle component, that contains the `id` of the
+    // corresponding particle data in the Sim code.
     sim.spawn_particles(&mut commands);
+
     commands.spawn(sim);
 
     // FPS display.
